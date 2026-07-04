@@ -15,7 +15,7 @@ export function getWebAppUrl(): string {
   }
 
   // 3. Fallback hardcoded URL if you prefer to paste it directly here
-  const fallbackUrl: string = ''; // يمكنك كتابة رابط الـ Apps Script هنا مباشرة كخيار بديل دائم
+  const fallbackUrl: string = 'https://script.google.com/macros/s/AKfycbx_zfSUANqp33U2caUDYqWbu9ALXOwL10PF3cQX6sIwVYgLfMn5S8wmJaRZpTJPSsC3Uw/exec'; // يمكنك كتابة رابط الـ Apps Script هنا مباشرة كخيار بديل دائم
   if (fallbackUrl && fallbackUrl.trim().length > 0) {
     return fallbackUrl.trim();
   }
