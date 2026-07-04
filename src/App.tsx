@@ -6,12 +6,17 @@ import StudentLogin from './components/StudentLogin';
 import LessonList from './components/LessonList';
 import LessonDetail from './components/LessonDetail';
 import SettingsPanel from './components/SettingsPanel';
-import { Settings, RefreshCw, BookOpen, Sparkles, Database, Sun, Moon } from 'lucide-react';
+import AdminPasswordModal from './components/AdminPasswordModal';
+import { Settings, RefreshCw, BookOpen, Sparkles, Database, Sun, Moon, Lock } from 'lucide-react';
 
 export default function App() {
   const [webAppUrl, setWebAppUrl] = useState(getWebAppUrl());
   const [isConfigured, setIsConfigured] = useState(isApiConfigured());
-  const [isSettingsOpen, setIsSettingsOpen] = useState(!isApiConfigured()); // Auto-open if not configured yet!
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // Do not auto-open to remain fully locked for students
+  
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => localStorage.getItem('isAdminUnlocked') === 'true');
+  const [showFirstPassModal, setShowFirstPassModal] = useState(false);
+  const [showSecondPassModal, setShowSecondPassModal] = useState(false);
   
   const [student, setStudent] = useState<Student | null>(null);
   const [sheetName, setSheetName] = useState<string>('');
@@ -126,16 +131,20 @@ export default function App() {
               {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {isConfigured ? (
-              <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-                <span>متصل بقاعدة البيانات</span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-bold rounded-full">
-                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full" />
-                <span>غير متصل</span>
-              </span>
+            {isAdminUnlocked && (
+              <>
+                {isConfigured ? (
+                  <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full">
+                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                    <span>متصل بقاعدة البيانات</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-bold rounded-full">
+                    <span className="w-1.5 h-1.5 bg-rose-500 rounded-full" />
+                    <span>غير متصل</span>
+                  </span>
+                )}
+              </>
             )}
 
             {student && (
@@ -149,13 +158,29 @@ export default function App() {
               </button>
             )}
 
-            <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="p-2.5 bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-slate-700 border border-sky-100 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-300 rounded-2xl cursor-pointer transition-all active:scale-95 shadow-sm"
-              title="إعدادات قاعدة البيانات"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
+            {isAdminUnlocked && (
+              <>
+                <button
+                  onClick={() => {
+                    setIsAdminUnlocked(false);
+                    setIsSettingsOpen(false);
+                    localStorage.removeItem('isAdminUnlocked');
+                  }}
+                  className="px-3 py-2.5 bg-rose-50/50 dark:bg-rose-950/20 hover:bg-rose-100/80 dark:hover:bg-rose-950/40 border border-rose-100/60 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 rounded-2xl cursor-pointer transition-all active:scale-95 shadow-sm flex items-center gap-1.5 text-xs font-bold"
+                  title="الخروج من وضع الإدارة"
+                >
+                  <Lock className="w-4 h-4" />
+                  <span>خروج الإدارة</span>
+                </button>
+                <button
+                  onClick={() => setShowSecondPassModal(true)}
+                  className="p-2.5 bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-slate-700 border border-sky-100 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-300 rounded-2xl cursor-pointer transition-all active:scale-95 shadow-sm"
+                  title="إعدادات قاعدة البيانات"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -187,8 +212,10 @@ export default function App() {
             >
               <StudentLogin
                 onLoginSuccess={handleLoginSuccess}
-                onOpenSettings={() => setIsSettingsOpen(true)}
+                onOpenSettings={() => setShowSecondPassModal(true)}
                 isConfigured={isConfigured}
+                isAdminUnlocked={isAdminUnlocked}
+                onUnlockAdmin={() => setShowFirstPassModal(true)}
               />
             </motion.div>
           ) : currentLessonIdx === null ? (
@@ -251,6 +278,27 @@ export default function App() {
           <SettingsPanel
             onClose={() => setIsSettingsOpen(false)}
             onSave={handleSaveSettings}
+          />
+        )}
+
+        {showFirstPassModal && (
+          <AdminPasswordModal
+            stage={1}
+            onClose={() => setShowFirstPassModal(false)}
+            onSuccess={() => {
+              setIsAdminUnlocked(true);
+              localStorage.setItem('isAdminUnlocked', 'true');
+            }}
+          />
+        )}
+
+        {showSecondPassModal && (
+          <AdminPasswordModal
+            stage={2}
+            onClose={() => setShowSecondPassModal(false)}
+            onSuccess={() => {
+              setIsSettingsOpen(true);
+            }}
           />
         )}
       </AnimatePresence>

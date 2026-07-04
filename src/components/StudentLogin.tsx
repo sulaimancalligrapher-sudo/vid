@@ -7,9 +7,17 @@ interface StudentLoginProps {
   onLoginSuccess: (username: string, sheetNumber: string, sheetName: string) => void;
   onOpenSettings: () => void;
   isConfigured: boolean;
+  isAdminUnlocked: boolean;
+  onUnlockAdmin: () => void;
 }
 
-export default function StudentLogin({ onLoginSuccess, onOpenSettings, isConfigured }: StudentLoginProps) {
+export default function StudentLogin({ 
+  onLoginSuccess, 
+  onOpenSettings, 
+  isConfigured, 
+  isAdminUnlocked, 
+  onUnlockAdmin 
+}: StudentLoginProps) {
   const [username, setUsername] = useState(localStorage.getItem('loggedInUsername') || '');
   const [sheetNumber, setSheetNumber] = useState(localStorage.getItem('loggedInSheetNumber') || '');
   const [loading, setLoading] = useState(false);
@@ -71,14 +79,6 @@ export default function StudentLogin({ onLoginSuccess, onOpenSettings, isConfigu
 
   return (
     <div className="flex-grow flex items-center justify-center p-4">
-      {/* Settings Shortcut Button */}
-      <button
-        onClick={onOpenSettings}
-        className="fixed top-4 right-4 p-3 bg-white/90 dark:bg-slate-900/90 hover:bg-amber-50 dark:hover:bg-slate-800 border border-sky-100/80 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:text-amber-500 rounded-2xl cursor-pointer transition-all flex items-center gap-2 text-xs font-bold shadow-md"
-      >
-        <Settings className="w-4.5 h-4.5 animate-spin-hover" />
-        <span>إعدادات الاتصال بالشيت</span>
-      </button>
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -177,6 +177,24 @@ export default function StudentLogin({ onLoginSuccess, onOpenSettings, isConfigu
             )}
           </button>
         </form>
+
+        {/* Admin Mode Trigger Link */}
+        <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/60 text-center">
+          {isAdminUnlocked ? (
+            <span className="text-[10px] text-emerald-500 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 px-3 py-1.5 rounded-full font-extrabold inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+              <span>وضع الإدارة نشط</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={onUnlockAdmin}
+              className="text-[11px] text-slate-400 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 font-extrabold transition-all cursor-pointer flex items-center gap-1.5 mx-auto"
+            >
+              <span>دخول الإدارة والتحكم بالشيت 🔐</span>
+            </button>
+          )}
+        </div>
       </motion.div>
     </div>
   );

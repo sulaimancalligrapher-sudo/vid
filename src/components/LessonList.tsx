@@ -24,6 +24,34 @@ export default function LessonList({
   loading,
 }: LessonListProps) {
 
+  const [expandedComments, setExpandedComments] = React.useState<Record<number, boolean>>({});
+
+  const toggleComment = (e: React.MouseEvent, idx: number) => {
+    e.stopPropagation(); // Avoid triggering onSelectLesson
+    setExpandedComments(prev => ({
+      ...prev,
+      [idx]: !prev[idx]
+    }));
+  };
+
+  const hasMoreThanTwoWords = (text: string): boolean => {
+    if (!text) return false;
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    return words.length > 2;
+  };
+
+  const getTwoWordsOrFull = (text: string): string => {
+    if (!text) return 'درس غير معنون';
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    if (words.length <= 2) return text;
+    return words.slice(0, 2).join(' ') + '...';
+  };
+
+  const isCommentExpanded = (idx: number, text: string): boolean => {
+    if (!hasMoreThanTwoWords(text)) return true;
+    return !!expandedComments[idx];
+  };
+
   const handleResetLesson = async (e: React.MouseEvent, index: number, lesson: WordData) => {
     e.stopPropagation(); // Prevent opening lesson immediately
     if (confirm('هل أنت متأكد من رغبتك في إعادة المحاولة لهذا الدرس؟ سيؤدي ذلك إلى استهلاك محاولة واحدة من محاولاتك المتاحة.')) {
@@ -95,9 +123,9 @@ export default function LessonList({
             <table className="w-full text-right border-collapse">
               <thead>
                 <tr className="bg-amber-50/40 dark:bg-slate-950/40 border-b border-amber-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-extrabold">
-                  <th className="px-6 py-4">اسم وموضوع الدرس</th>
-                  <th className="px-6 py-4 text-center">حالة الإنجاز</th>
-                  <th className="px-6 py-4 text-center">إعادة محاولة</th>
+                  <th className="px-3 py-4 md:px-6">اسم وموضوع الدرس</th>
+                  <th className="px-3 py-4 md:px-6 text-center">حالة الإنجاز</th>
+                  <th className="px-3 py-4 md:px-6 text-center">إعادة محاولة</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-amber-100/40 dark:divide-slate-800/60">
@@ -110,6 +138,9 @@ export default function LessonList({
                     showReset = showReset && lesson.dzValue === 'تم';
                   }
 
+                  const commentText = lesson.comment || 'درس غير معنون';
+                  const isExpanded = isCommentExpanded(idx, commentText);
+
                   return (
                     <motion.tr
                       initial={{ opacity: 0, y: 5 }}
@@ -121,23 +152,47 @@ export default function LessonList({
                         isCompleted ? 'bg-emerald-50/20 dark:bg-emerald-950/10' : 'bg-[#fefcf8] dark:bg-slate-900'
                       }`}
                     >
-                      {/* Lesson Name */}
-                      <td className="px-6 py-4.5">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-2.5 rounded-2xl transition-colors ${
+                      {/* Lesson Name & Topic */}
+                      <td className="px-3 py-3 md:px-6 md:py-4.5">
+                        <div className="flex items-center gap-2 md:gap-3">
+                          <div className={`p-2 md:p-2.5 rounded-2xl transition-colors shrink-0 ${
                             isCompleted 
                               ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400' 
                               : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 dark:text-indigo-400 group-hover:bg-amber-400 group-hover:text-slate-900 shadow-sm'
                           }`}>
-                            <PlayCircle className="w-5 h-5" />
+                            <PlayCircle className="w-4 h-4 md:w-5 md:h-5" />
                           </div>
-                          <div>
-                            <span className={`font-extrabold block text-sm transition-colors ${
-                              isCompleted ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200 group-hover:text-amber-600 dark:group-hover:text-amber-400'
-                            }`}>
-                              {lesson.comment || 'درس غير معنون'}
-                            </span>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold mt-1 block">
+                          <div className="min-w-0 flex-1">
+                            {/* Tap to expand for mobile */}
+                            <div 
+                              onClick={(e) => {
+                                if (hasMoreThanTwoWords(commentText)) {
+                                  toggleComment(e, idx);
+                                } else {
+                                  // Click normal to open lesson
+                                  onSelectLesson(idx, false);
+                                }
+                              }}
+                              className="inline-block max-w-full"
+                            >
+                              <span className={`font-extrabold text-xs md:text-sm transition-colors cursor-pointer select-none ${
+                                isCompleted ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200 group-hover:text-amber-600 dark:group-hover:text-amber-400'
+                              }`}>
+                                {isExpanded ? (
+                                  <span className="block break-words leading-relaxed max-w-[150px] xs:max-w-[200px] sm:max-w-md">
+                                    {commentText}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1">
+                                    <span>{getTwoWordsOrFull(commentText)}</span>
+                                    <span className="text-[9px] text-indigo-500 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/50 px-1 py-0.5 rounded font-normal font-sans hover:bg-amber-100">
+                                      + تفاصيل
+                                    </span>
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                            <span className="text-[9px] md:text-[10px] text-slate-500 dark:text-slate-400 font-bold mt-1 block">
                               الكلمة المستهدفة: {lesson.word}
                             </span>
                           </div>
@@ -145,37 +200,37 @@ export default function LessonList({
                       </td>
 
                       {/* Achievement Status */}
-                      <td className="px-6 py-4.5 text-center">
+                      <td className="px-2 py-3 md:px-6 md:py-4.5 text-center">
                         <div className="flex items-center justify-center">
                           {isCompleted ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-full">
-                              <CheckCircle className="w-3.5 h-3.5" />
-                              <span>تم الإنجاز (مراجعة)</span>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-full">
+                              <CheckCircle className="w-3.5 h-3.5 hidden sm:inline" />
+                              <span>تم</span>
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-600 dark:text-amber-400 text-xs font-bold rounded-full">
-                              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
-                              <span>مستمر / غير منجز</span>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-600 dark:text-amber-400 text-xs font-bold rounded-full">
+                              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse hidden sm:inline" />
+                              <span>جديد</span>
                             </span>
                           )}
                         </div>
                       </td>
 
                       {/* Reset / Retake Button */}
-                      <td className="px-6 py-4.5 text-center">
+                      <td className="px-2 py-3 md:px-6 md:py-4.5 text-center">
                         <div className="flex items-center justify-center">
                           {showReset ? (
                             <button
                               onClick={(e) => handleResetLesson(e, idx, lesson)}
-                              className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 border border-amber-300 text-slate-900 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer shadow-sm"
+                              className="px-2 py-1 md:px-3 md:py-1.5 bg-amber-400 hover:bg-amber-500 border border-amber-300 text-slate-900 text-[10px] md:text-xs font-extrabold rounded-xl transition-all flex items-center gap-1 active:scale-95 cursor-pointer shadow-sm shrink-0"
                             >
-                              <RefreshCw className="w-3.5 h-3.5 animate-spin-hover" />
+                              <RefreshCw className="w-3 h-3 md:w-3.5 md:h-3.5 animate-spin-hover" />
                               <span>إعادة ({lesson.retryResetCount})</span>
                             </button>
                           ) : isCompleted ? (
-                            <span className="text-slate-400 dark:text-slate-500 text-[11px] flex items-center gap-1 justify-center font-bold">
+                            <span className="text-slate-400 dark:text-slate-500 text-[10px] md:text-[11px] flex items-center gap-1 justify-center font-bold">
                               <Lock className="w-3 h-3 text-slate-400 dark:text-slate-500" />
-                              <span>مغلق</span>
+                              <span className="hidden sm:inline">مغلق</span>
                             </span>
                           ) : (
                             <span className="text-slate-400 dark:text-slate-500 font-mono text-xs">-</span>
