@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { WordData, Question, Student } from '../types';
 import {
   ArrowRight, Image as ImageIcon, Video, Mic, Upload, Volume2,
-  Play, Pause, RefreshCw, CheckCircle2, ChevronRight, X, AlertTriangle, Sparkles, AlertCircle
+  Play, Pause, RefreshCw, CheckCircle2, ChevronRight, X, AlertTriangle, Sparkles, AlertCircle, Maximize, Minimize
 } from 'lucide-react';
 import {
   saveQuestionAnswer,
@@ -58,6 +58,8 @@ export default function LessonDetail({
   const ytTimerRef = useRef<number | null>(null);
   const [videoAnswered, setVideoAnswered] = useState<Set<string>>(new Set());
   const videoAnsweredRef = useRef<Set<string>>(new Set());
+  const [ytFullscreen, setYtFullscreen] = useState(false);
+  const videoCardRef = useRef<HTMLDivElement | null>(null);
 
   // Explanation Audio State
   const [audioPlaying, setAudioPlaying] = useState(false);
@@ -189,6 +191,12 @@ export default function LessonDetail({
       checkAndInitYt();
     }
 
+    // Setup fullscreen change event listener
+    const handleFullscreenChange = () => {
+      setYtFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+
     // Clean up streams on unmount
     return () => {
       stopAllStreams();
@@ -196,6 +204,7 @@ export default function LessonDetail({
       if (audioObjRef.current) audioObjRef.current.pause();
       if (fullAudioObjRef.current) fullAudioObjRef.current.pause();
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, []);
 
@@ -240,6 +249,17 @@ export default function LessonDetail({
       });
     } catch (err) {
       console.error('Failed to init YT player:', err);
+    }
+  };
+
+  const handleToggleFullscreen = () => {
+    if (!videoCardRef.current) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      videoCardRef.current.requestFullscreen().catch((err) => {
+        console.error('Failed to enter fullscreen:', err);
+      });
     }
   };
 
@@ -534,46 +554,55 @@ export default function LessonDetail({
         ? lesson.questions.findIndex(q => q.question === currentQuestion?.question)
         : lesson.audioQuestions.findIndex(q => q.question === currentQuestion?.question);
 
+    const type = currentQuestionType || 'video';
+    const qText = currentQuestion?.question || '';
+
+    // Mark it as answered immediately in refs and state (sync)
+    if (type === 'video') {
+      videoAnsweredRef.current.add(qText);
+      setVideoAnswered(prev => {
+        const next = new Set(prev);
+        next.add(qText);
+        return next;
+      });
+    } else {
+      audioAnsweredRef.current.add(qText);
+      setAudioAnswered(prev => {
+        const next = new Set(prev);
+        next.add(qText);
+        return next;
+      });
+    }
+
+    // Close Question Modal and resume media immediately so user doesn't wait
+    setCurrentQuestion(null);
+    setCurrentQuestionType(null);
+
+    if (type === 'video' && ytPlayerRef.current) {
+      ytPlayerRef.current.playVideo();
+    } else if (type === 'audio' && audioObjRef.current) {
+      audioObjRef.current.play();
+      setAudioPlaying(true);
+    }
+
     try {
       await saveQuestionAnswer({
         sheet_number: student.sheetNumber,
         username: student.username,
         word: lesson.word,
         youtubeUrl: lesson.youtubeUrl,
-        question: currentQuestion?.question || '',
+        question: qText,
         selectedAnswer: answer,
         isCorrect: isCorrect,
         timestamp: new Date().toLocaleString(),
-        type: currentQuestionType || 'video',
+        type: type,
         questionIndex: qIndex,
         comment: lesson.comment,
         explainSound: lesson.explainSound,
       });
-
-      if (currentQuestionType === 'video') {
-        const nextSet = new Set(videoAnswered);
-        nextSet.add(currentQuestion?.question || '');
-        setVideoAnswered(nextSet);
-        videoAnsweredRef.current.add(currentQuestion?.question || '');
-      } else {
-        const nextSet = new Set(audioAnswered);
-        nextSet.add(currentQuestion?.question || '');
-        setAudioAnswered(nextSet);
-        audioAnsweredRef.current.add(currentQuestion?.question || '');
-      }
     } catch (err) {
       console.error('Failed to save question answer to sheet:', err);
     }
-
-    // Close Question Modal and resume media
-    setCurrentQuestion(null);
-    if (currentQuestionType === 'video' && ytPlayerRef.current) {
-      ytPlayerRef.current.playVideo();
-    } else if (currentQuestionType === 'audio' && audioObjRef.current) {
-      audioObjRef.current.play();
-      setAudioPlaying(true);
-    }
-    setCurrentQuestionType(null);
   };
 
   // ------------------- IN-PAGE MICROPHONE RECORDER -------------------
@@ -744,19 +773,24 @@ export default function LessonDetail({
     setImageUploadError('');
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-        audio: false,
-      });
+      let stream: MediaStream;
+      try {
+        // Try back-facing camera first
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+      } catch (inner) {
+        // Fallback to simple default video
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
       setCameraStream(stream);
       setCameraActive(true);
-
-      setTimeout(() => {
-        if (videoStreamRef.current) {
-          videoStreamRef.current.srcObject = stream;
-        }
-      }, 100);
-    } catch (err) {
+    } catch (err: any) {
+      console.error('Camera access failed:', err);
       setImageUploadError('خطأ: لم نتمكن من تفعيل الكاميرا. يرجى تفعيل أذونات الكاميرا في جهازك.');
     }
   };
@@ -1116,21 +1150,26 @@ export default function LessonDetail({
 
               {/* YouTube Video Card */}
               {lesson.youtubeUrl && (
-                <div className="bg-slate-800 border border-slate-700/40 rounded-3xl p-4 shadow-xl">
-                  <h3 className="text-xs font-bold text-slate-300 mb-3 flex items-center gap-1.5 justify-center">
+                <div
+                  ref={videoCardRef}
+                  className={`bg-slate-800 border border-slate-700/40 rounded-3xl p-4 shadow-xl flex flex-col relative transition-all ${
+                    ytFullscreen ? 'fixed inset-0 z-50 w-screen h-screen rounded-none p-6 bg-slate-950 border-none' : ''
+                  }`}
+                >
+                  <h3 className={`text-xs font-bold text-slate-300 mb-3 flex items-center gap-1.5 justify-center ${ytFullscreen ? 'text-sm mb-4' : ''}`}>
                     <Video className="w-4.5 h-4.5 text-amber-400" />
                     <span>فيديو الدرس التفاعلي المساعد</span>
                   </h3>
                   
                   {/* Aspect video player frame wrapper */}
-                  <div className="relative aspect-video rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950 mb-3">
+                  <div className={`relative ${ytFullscreen ? 'flex-grow h-0 w-full mb-6' : 'aspect-video w-full mb-3'} rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950`}>
                     <div id="yt-player-frame" className="w-full h-full" />
                     {/* Transparent overlay blocks skipping on the YouTube iframe */}
                     <div className="absolute inset-0 bg-transparent z-20 pointer-events-auto" />
                   </div>
 
                   {/* Custom Controls */}
-                  <div className="flex items-center justify-between gap-4 p-2.5 bg-slate-900 rounded-2xl">
+                  <div className="flex items-center justify-between gap-4 p-2.5 bg-slate-900 rounded-2xl w-full">
                     <button
                       onClick={ytPlaying ? handleYtPause : handleYtPlay}
                       className="p-3 bg-amber-500 text-slate-950 rounded-xl hover:bg-amber-600 transition-all active:scale-90 cursor-pointer shadow-md shadow-amber-500/10"
@@ -1161,7 +1200,34 @@ export default function LessonDetail({
                         className="w-16 h-1 bg-slate-700 accent-amber-400 rounded-lg cursor-pointer appearance-none"
                       />
                     </div>
+
+                    {/* Fullscreen Button */}
+                    <button
+                      onClick={handleToggleFullscreen}
+                      className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-all active:scale-90 cursor-pointer shadow-md"
+                      title={ytFullscreen ? 'تصغير الشاشة' : 'تكبير الشاشة'}
+                    >
+                      {ytFullscreen ? <Minimize className="w-4.5 h-4.5" /> : <Maximize className="w-4.5 h-4.5" />}
+                    </button>
                   </div>
+
+                  {/* Render QuestionModal inside fullscreen container so it overlays the video when in fullscreen */}
+                  <AnimatePresence>
+                    {currentQuestion && currentQuestionType === 'video' && (
+                      <QuestionModal
+                        question={currentQuestion}
+                        onClose={() => {
+                          setCurrentQuestion(null);
+                          if (ytPlayerRef.current) {
+                            ytPlayerRef.current.playVideo();
+                          }
+                          setCurrentQuestionType(null);
+                        }}
+                        onSubmit={handleQuestionSubmit}
+                        showResult={lesson.showResult}
+                      />
+                    )}
+                  </AnimatePresence>
                 </div>
               )}
             </div>
@@ -1476,7 +1542,12 @@ export default function LessonDetail({
                   {cameraActive && (
                     <div className="relative aspect-square w-full max-w-[240px] rounded-xl overflow-hidden border border-slate-800 bg-slate-900 mb-4">
                       <video
-                        ref={videoStreamRef}
+                        ref={(el) => {
+                          videoStreamRef.current = el;
+                          if (el && cameraStream) {
+                            el.srcObject = cameraStream;
+                          }
+                        }}
                         autoPlay
                         playsInline
                         className="w-full h-full object-cover -scale-x-100" // Mirror view
@@ -1606,16 +1677,14 @@ export default function LessonDetail({
         )}
       </AnimatePresence>
 
-      {/* OVERLAY INTERACTIVE QUESTIONS */}
+      {/* OVERLAY INTERACTIVE QUESTIONS (AUDIO ONLY) */}
       <AnimatePresence>
-        {currentQuestion && (
+        {currentQuestion && currentQuestionType === 'audio' && (
           <QuestionModal
             question={currentQuestion}
             onClose={() => {
               setCurrentQuestion(null);
-              if (currentQuestionType === 'video' && ytPlayerRef.current) {
-                ytPlayerRef.current.playVideo();
-              } else if (currentQuestionType === 'audio' && audioObjRef.current) {
+              if (audioObjRef.current) {
                 audioObjRef.current.play();
                 setAudioPlaying(true);
               }
