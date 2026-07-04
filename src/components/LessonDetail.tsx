@@ -1687,7 +1687,7 @@ export default function LessonDetail({
 
                   {/* Video Stream Preview */}
                   {cameraActive && !uploadingImage && (
-                    <div className="relative aspect-square w-full max-w-[240px] rounded-xl overflow-hidden border border-slate-850 bg-slate-900 mb-4 shadow-lg">
+                    <div className="relative aspect-square w-full max-w-[480px] rounded-2xl overflow-hidden border-2 border-amber-500/30 bg-slate-900 mb-4 shadow-xl">
                       <video
                         ref={videoStreamRef}
                         autoPlay
@@ -1700,7 +1700,7 @@ export default function LessonDetail({
 
                   {/* Captured Photo Preview */}
                   {capturedImagePreview && !cameraActive && !uploadingImage && (
-                    <div className="relative aspect-square w-full max-w-[240px] rounded-xl overflow-hidden border border-slate-850 bg-slate-900 mb-4 shadow-lg">
+                    <div className="relative aspect-square w-full max-w-[480px] rounded-2xl overflow-hidden border-2 border-emerald-500/30 bg-slate-900 mb-4 shadow-xl">
                       <img src={capturedImagePreview} className="w-full h-full object-cover" alt="Captured" />
                     </div>
                   )}
