@@ -177,25 +177,6 @@ export default function LessonDetail({
     };
     loadScores();
 
-    // Setup YouTube Iframe API if needed
-    if (lesson.youtubeUrl) {
-      if (!window.YT) {
-        const tag = document.createElement('script');
-        tag.src = 'https://www.youtube.com/iframe_api';
-        const firstScriptTag = document.getElementsByTagName('script')[0];
-        firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-      }
-      
-      const checkAndInitYt = () => {
-        if (window.YT && window.YT.Player) {
-          initYtPlayer();
-        } else {
-          setTimeout(checkAndInitYt, 200);
-        }
-      };
-      checkAndInitYt();
-    }
-
     // Setup message listener for external media capture popup
     const handleMessage = async (event: MessageEvent) => {
       const data = event.data;
@@ -354,6 +335,36 @@ export default function LessonDetail({
       console.error('Failed to init YT player:', err);
     }
   };
+
+  // Re-initialize or handle YouTube Player dynamically on Tab Swapping or Mount
+  useEffect(() => {
+    if (activeTab === 'study' && lesson.youtubeUrl) {
+      if (!window.YT) {
+        const tag = document.createElement('script');
+        tag.src = 'https://www.youtube.com/iframe_api';
+        const firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+      }
+
+      const checkAndInitYt = () => {
+        const container = document.getElementById('yt-player-frame');
+        if (container && window.YT && window.YT.Player) {
+          initYtPlayer();
+        } else if (activeTab === 'study') {
+          setTimeout(checkAndInitYt, 250);
+        }
+      };
+
+      // Slight delay to ensure DOM state is completely mounted and rendering tab panel
+      const timeoutId = setTimeout(checkAndInitYt, 150);
+      return () => clearTimeout(timeoutId);
+    } else {
+      // Clean up when switching away from the study tab
+      stopXyTimer();
+      setYtReady(false);
+      setYtPlaying(false);
+    }
+  }, [activeTab, lesson.youtubeUrl]);
 
   const handleToggleFullscreen = () => {
     if (!videoCardRef.current) return;
@@ -772,38 +783,43 @@ export default function LessonDetail({
     setAudioUploadError('');
 
     try {
-      const reader = new FileReader();
-      reader.readAsDataURL(recordedBlob);
-      reader.onloadend = async () => {
-        const base64 = (reader.result as string).split(',')[1];
+      // 1. Convert blob to base64 asynchronously using a Promise
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const res = (reader.result as string).split(',')[1];
+          resolve(res);
+        };
+        reader.onerror = (err) => reject(err);
+        reader.readAsDataURL(recordedBlob);
+      });
+
+      // 2. Upload file to Google Drive
+      const uploadResult = await uploadRecording({
+        base64Data: base64,
+        mimeType: recordedBlob.type || 'audio/webm',
+        word: lesson.word,
+        username: student.username,
+        sheet_number: student.sheetNumber,
+      });
+
+      if (uploadResult && uploadResult.success) {
+        const driveUrl = uploadResult.link;
+        setSavedRecordingLink(driveUrl);
         
-        // 1. Upload file to Google Drive
-        const uploadResult = await uploadRecording({
-          base64Data: base64,
-          mimeType: recordedBlob.type || 'audio/webm',
-          word: lesson.word,
-          username: student.username,
+        // 3. Save metadata in Sheet
+        await saveRecordingLinkMetadata({
           sheet_number: student.sheetNumber,
+          username: student.username,
+          comment: lesson.comment,
+          link: driveUrl,
+          timestamp: new Date().toLocaleString(),
         });
 
-        if (uploadResult && uploadResult.success) {
-          const driveUrl = uploadResult.link;
-          setSavedRecordingLink(driveUrl);
-          
-          // 2. Save metadata in Sheet
-          await saveRecordingLinkMetadata({
-            sheet_number: student.sheetNumber,
-            username: student.username,
-            comment: lesson.comment,
-            link: driveUrl,
-            timestamp: new Date().toLocaleString(),
-          });
-
-          setAudioUploadSuccess(true);
-        } else {
-          throw new Error('فشل الرفع من الخادم.');
-        }
-      };
+        setAudioUploadSuccess(true);
+      } else {
+        throw new Error('فشل الرفع من الخادم.');
+      }
     } catch (err: any) {
       setAudioUploadError(err.message || 'حدث خطأ أثناء رفع ملف الصوت إلى Google Drive.');
     } finally {
@@ -811,52 +827,14 @@ export default function LessonDetail({
     }
   };
 
-  const handleManualAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleManualAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setUploadingAudio(true);
     setAudioUploadError('');
+    setRecordedBlob(file);
     setRecordedAudioUrl(URL.createObjectURL(file));
-
-    try {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onloadend = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-
-        // 1. Upload to Google Drive
-        const uploadResult = await uploadRecording({
-          base64Data: base64,
-          mimeType: file.type || 'audio/mpeg',
-          word: lesson.word,
-          username: student.username,
-          sheet_number: student.sheetNumber,
-        });
-
-        if (uploadResult && uploadResult.success) {
-          const driveUrl = uploadResult.link;
-          setSavedRecordingLink(driveUrl);
-
-          // 2. Save metadata to Answers Sheet
-          await saveRecordingLinkMetadata({
-            sheet_number: student.sheetNumber,
-            username: student.username,
-            comment: lesson.comment,
-            link: driveUrl,
-            timestamp: new Date().toLocaleString(),
-          });
-
-          setAudioUploadSuccess(true);
-        } else {
-          throw new Error('فشل رفع الملف الصوتي.');
-        }
-      };
-    } catch (err: any) {
-      setAudioUploadError(err.message || 'فشل رفع الملف الصوتي المختار.');
-    } finally {
-      setUploadingAudio(false);
-    }
+    setAudioUploadSuccess(false);
   };
 
   const handleAudioRetry = () => {
@@ -1456,34 +1434,68 @@ export default function LessonDetail({
                   </h3>
 
                   {/* Word Box */}
-                  <div className="px-8 py-6 bg-slate-950/80 border border-slate-850 rounded-3xl relative min-w-[200px] mb-4">
-                    <div className="flex flex-row-reverse items-center justify-center gap-5">
+                  <div className="px-8 py-6 bg-slate-950/80 border border-slate-850 rounded-3xl relative min-w-[200px] mb-4 w-full">
+                    {/* Beautiful large connected Arabic text block */}
+                    <div className="text-center py-4 select-none overflow-x-auto w-full scrollbar-thin scrollbar-thumb-slate-800" dir="rtl">
+                      <div className="inline-block text-6xl md:text-8xl font-bold font-sans tracking-normal leading-relaxed text-slate-100 bg-slate-900/40 px-10 py-6 rounded-3xl border border-slate-800/80 whitespace-nowrap">
+                        {lesson.word.split('').map((char, index) => {
+                          const isListened = listenedLetters.has(index);
+                          const isActive = activeLetterIdx === index;
+                          const charWithJoiners = (index > 0 ? '\u200D' : '') + char + (index < lesson.word.length - 1 ? '\u200D' : '');
+                          return (
+                            <span
+                              key={index}
+                              onClick={() => playLetter(lesson.letterSounds[index], index)}
+                              className="relative inline cursor-pointer select-none transition-all duration-150"
+                            >
+                              {/* Beautiful highlighted box surrounding the active letter */}
+                              {isActive && (
+                                <span className="absolute -inset-x-1.5 -inset-y-3 bg-amber-400/25 border-2 border-amber-400 rounded-xl shadow-[0_0_20px_rgba(251,191,36,0.8)] z-0 pointer-events-none" />
+                              )}
+
+                              {/* Highlighted box surrounding already listened letters */}
+                              {isListened && !isActive && (
+                                <span className="absolute -inset-x-1 -inset-y-2.5 bg-emerald-500/15 border-2 border-emerald-500/40 rounded-xl z-0 pointer-events-none" />
+                              )}
+
+                              <span
+                                className={`relative z-10 transition-colors duration-150 ${
+                                  isActive
+                                    ? 'text-amber-400 font-extrabold'
+                                    : isListened
+                                    ? 'text-emerald-400'
+                                    : 'text-slate-100 hover:text-amber-300'
+                                }`}
+                              >
+                                {charWithJoiners}
+                              </span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Progress dots row matching the character positions visually as a list */}
+                    <div className="flex flex-row-reverse items-center justify-center gap-3 mt-3 pt-3 border-t border-slate-900/60">
                       {lesson.word.split('').map((char, index) => {
                         const isListened = listenedLetters.has(index);
                         const isActive = activeLetterIdx === index;
                         return (
-                          <div key={index} className="flex flex-col items-center gap-3">
-                            {/* Interactive Letter Button */}
+                          <div key={index} className="flex flex-col items-center gap-1.5">
+                            {/* Small clickable dot */}
                             <button
                               onClick={() => playLetter(lesson.letterSounds[index], index)}
-                              className={`w-14 h-14 rounded-2xl text-2xl font-bold transition-all active:scale-95 cursor-pointer shadow-md flex items-center justify-center ${
+                              className={`w-3.5 h-3.5 rounded-full border transition-all duration-300 cursor-pointer ${
                                 isActive
-                                  ? 'bg-amber-400 text-slate-950 scale-105 shadow-amber-500/10'
+                                  ? 'bg-amber-400 border-amber-300 scale-125 shadow-md shadow-amber-500/30'
                                   : isListened
-                                  ? 'bg-emerald-500/10 border-2 border-emerald-500/40 text-emerald-400'
-                                  : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
-                              }`}
-                            >
-                              {char}
-                            </button>
-                            {/* Letter dot progress marker */}
-                            <div
-                              className={`w-3.5 h-3.5 rounded-full border transition-all duration-300 ${
-                                isListened
                                   ? 'bg-emerald-500 border-emerald-400 shadow-md shadow-emerald-500/20'
-                                  : 'bg-rose-600 border-rose-500'
+                                  : 'bg-slate-750 border-slate-600 hover:border-slate-500'
                               }`}
+                              title={`استمع لحرف: ${char}`}
                             />
+                            {/* Tiny label showing the isolated character */}
+                            <span className="text-[10px] text-slate-500 font-medium select-none">{char}</span>
                           </div>
                         );
                       })}
