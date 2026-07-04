@@ -1,8 +1,26 @@
 import { WordData } from './types';
 
-// Helper to get Web App URL from localStorage
+// Helper to get Web App URL from localStorage or environment variables
 export function getWebAppUrl(): string {
-  return localStorage.getItem('webAppUrl') || '';
+  // 1. Check localStorage first (allows individual overrides / testing)
+  const localUrl = localStorage.getItem('webAppUrl');
+  if (localUrl && localUrl.trim().length > 0) {
+    return localUrl.trim();
+  }
+
+  // 2. Check Vite Environment Variable (perfect for production deployment like Vercel)
+  const envUrl = (import.meta as any).env?.VITE_WEB_APP_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    return envUrl.trim();
+  }
+
+  // 3. Fallback hardcoded URL if you prefer to paste it directly here
+  const fallbackUrl: string = ''; // يمكنك كتابة رابط الـ Apps Script هنا مباشرة كخيار بديل دائم
+  if (fallbackUrl && fallbackUrl.trim().length > 0) {
+    return fallbackUrl.trim();
+  }
+
+  return '';
 }
 
 // Check if the API URL is configured

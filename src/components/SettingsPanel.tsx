@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Settings, Check, AlertCircle, Copy, CheckCircle2, HelpCircle, ExternalLink, Globe } from 'lucide-react';
+import { getWebAppUrl } from '../api';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -8,7 +9,7 @@ interface SettingsPanelProps {
 }
 
 export default function SettingsPanel({ onClose, onSave }: SettingsPanelProps) {
-  const [url, setUrl] = useState(localStorage.getItem('webAppUrl') || '');
+  const [url, setUrl] = useState(getWebAppUrl());
   const [copied, setCopied] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
