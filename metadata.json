@@ -1,0 +1,10 @@
+{
+  "name": "ملتقط الوسائط وقارئ الدروس",
+  "description": "تطبيق متكامل لتعليم القراءة التفاعلية للأطفال ومراقبة أداء الطلاب عبر التقاط الصور وتسجيل الصوت والرد على الأسئلة متصل بـ Google Sheets.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
