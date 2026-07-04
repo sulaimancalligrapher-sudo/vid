@@ -57,6 +57,7 @@ export default function LessonDetail({
   const ytPlayerRef = useRef<any>(null);
   const ytTimerRef = useRef<number | null>(null);
   const [videoAnswered, setVideoAnswered] = useState<Set<string>>(new Set());
+  const videoAnsweredRef = useRef<Set<string>>(new Set());
 
   // Explanation Audio State
   const [audioPlaying, setAudioPlaying] = useState(false);
@@ -66,6 +67,7 @@ export default function LessonDetail({
   const [audioVolume, setAudioVolume] = useState(40);
   const audioObjRef = useRef<HTMLAudioElement | null>(null);
   const [audioAnswered, setAudioAnswered] = useState<Set<string>>(new Set());
+  const audioAnsweredRef = useRef<Set<string>>(new Set());
 
   // Full Lesson Audio State
   const [fullAudioPlaying, setFullAudioPlaying] = useState(false);
@@ -253,7 +255,7 @@ export default function LessonDetail({
         // Check for interactive questions
         if (lesson.completed !== 'تم' || isReset) {
           const question = lesson.questions.find(
-            q => Math.abs(q.time - curr) < 1 && !videoAnswered.has(q.question)
+            q => Math.abs(q.time - curr) < 1 && !videoAnsweredRef.current.has(q.question)
           );
           if (question) {
             ytPlayerRef.current.pauseVideo();
@@ -321,7 +323,7 @@ export default function LessonDetail({
         // Check for questions
         if (lesson.completed !== 'تم' || isReset) {
           const question = lesson.audioQuestions.find(
-            q => Math.abs(q.time - curr) < 1 && !audioAnswered.has(q.question)
+            q => Math.abs(q.time - curr) < 1 && !audioAnsweredRef.current.has(q.question)
           );
           if (question) {
             audioObjRef.current.pause();
@@ -552,10 +554,12 @@ export default function LessonDetail({
         const nextSet = new Set(videoAnswered);
         nextSet.add(currentQuestion?.question || '');
         setVideoAnswered(nextSet);
+        videoAnsweredRef.current.add(currentQuestion?.question || '');
       } else {
         const nextSet = new Set(audioAnswered);
         nextSet.add(currentQuestion?.question || '');
         setAudioAnswered(nextSet);
+        audioAnsweredRef.current.add(currentQuestion?.question || '');
       }
     } catch (err) {
       console.error('Failed to save question answer to sheet:', err);
@@ -1122,7 +1126,7 @@ export default function LessonDetail({
                   <div className="relative aspect-video rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950 mb-3">
                     <div id="yt-player-frame" className="w-full h-full" />
                     {/* Transparent overlay blocks skipping on the YouTube iframe */}
-                    <div className="absolute inset-0 bg-transparent z-10 pointer-events-none" />
+                    <div className="absolute inset-0 bg-transparent z-20 pointer-events-auto" />
                   </div>
 
                   {/* Custom Controls */}
