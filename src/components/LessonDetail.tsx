@@ -45,6 +45,11 @@ export default function LessonDetail({
 }: LessonDetailProps) {
   const [isReset, setIsReset] = useState(initialIsReset);
   const [activeTab, setActiveTab] = useState<'study' | 'assignment'>('study');
+
+  const studentRef = useRef(student);
+  const lessonRef = useRef(lesson);
+  studentRef.current = student;
+  lessonRef.current = lesson;
   
   // Image Lightbox
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
@@ -191,6 +196,92 @@ export default function LessonDetail({
       checkAndInitYt();
     }
 
+    // Setup message listener for external media capture popup
+    const handleMessage = async (event: MessageEvent) => {
+      const data = event.data;
+      if (data && data.type === 'MEDIA_CAPTURED') {
+        if (data.mediaType === 'image') {
+          // Display the preview instantly
+          const dataUrl = `data:${data.mimeType || 'image/jpeg'};base64,${data.base64}`;
+          setCapturedImagePreview(dataUrl);
+          setCapturedImageBase64(data.base64);
+
+          setUploadingImage(true);
+          setImageUploadError('');
+          try {
+            const uploadResult = await uploadImage({
+              base64Data: data.base64,
+              mimeType: data.mimeType || 'image/jpeg',
+              word: lessonRef.current.word,
+              username: studentRef.current.username,
+              sheet_number: studentRef.current.sheetNumber,
+            });
+
+            if (uploadResult && uploadResult.success) {
+              const driveUrl = uploadResult.link;
+              setSavedImageLink(driveUrl);
+
+              await saveImageLinkMetadata({
+                sheet_number: studentRef.current.sheetNumber,
+                username: studentRef.current.username,
+                comment: lessonRef.current.comment,
+                link: driveUrl,
+                timestamp: new Date().toLocaleString(),
+              });
+
+              setImageUploadSuccess(true);
+            } else {
+              throw new Error('فشل الرفع إلى جوجل درايف.');
+            }
+          } catch (err: any) {
+            console.error('Failed to upload image from popup:', err);
+            setImageUploadError(err.message || 'فشل رفع ملف الصورة.');
+          } finally {
+            setUploadingImage(false);
+          }
+        } else if (data.mediaType === 'audio') {
+          // Display preview instantly
+          const dataUrl = `data:${data.mimeType || 'audio/webm'};base64,${data.base64}`;
+          setRecordedAudioUrl(dataUrl);
+
+          setUploadingAudio(true);
+          setAudioUploadError('');
+          try {
+            const uploadResult = await uploadRecording({
+              base64Data: data.base64,
+              mimeType: data.mimeType || 'audio/webm',
+              word: lessonRef.current.word,
+              username: studentRef.current.username,
+              sheet_number: studentRef.current.sheetNumber,
+            });
+
+            if (uploadResult && uploadResult.success) {
+              const driveUrl = uploadResult.link;
+              setSavedRecordingLink(driveUrl);
+
+              await saveRecordingLinkMetadata({
+                sheet_number: studentRef.current.sheetNumber,
+                username: studentRef.current.username,
+                comment: lessonRef.current.comment,
+                link: driveUrl,
+                timestamp: new Date().toLocaleString(),
+              });
+
+              setAudioUploadSuccess(true);
+            } else {
+              throw new Error('فشل الرفع إلى جوجل درايف.');
+            }
+          } catch (err: any) {
+            console.error('Failed to upload audio from popup:', err);
+            setAudioUploadError(err.message || 'فشل رفع ملف الصوت.');
+          } finally {
+            setUploadingAudio(false);
+          }
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+
     // Setup fullscreen change event listener
     const handleFullscreenChange = () => {
       setYtFullscreen(!!document.fullscreenElement);
@@ -205,8 +296,20 @@ export default function LessonDetail({
       if (fullAudioObjRef.current) fullAudioObjRef.current.pause();
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      window.removeEventListener('message', handleMessage);
     };
   }, []);
+
+  // Connect and play camera stream inline
+  useEffect(() => {
+    if (cameraActive && cameraStream && videoStreamRef.current) {
+      const video = videoStreamRef.current;
+      video.srcObject = cameraStream;
+      video.play().catch(err => {
+        console.error('Failed to autoplay camera stream:', err);
+      });
+    }
+  }, [cameraActive, cameraStream]);
 
   const stopAllStreams = () => {
     if (micStream) micStream.getTracks().forEach(t => t.stop());
@@ -766,6 +869,19 @@ export default function LessonDetail({
     }
   };
 
+  // ------------------- EXTERNAL POPUP MEDIA CAPTURER -------------------
+  const GITHUB_POPUP_URL = "https://art4calli.github.io/cam/";
+
+  const openCameraPopup = () => {
+    const popupUrl = `${GITHUB_POPUP_URL}?mode=camera&word=${encodeURIComponent(lessonRef.current.word || 'واجب')}&username=${encodeURIComponent(studentRef.current.username || '')}&sheetNumber=${encodeURIComponent(studentRef.current.sheetNumber || '')}`;
+    window.open(popupUrl, "Capture", "width=500,height=650,left=100,top=100");
+  };
+
+  const openMicPopup = () => {
+    const popupUrl = `${GITHUB_POPUP_URL}?mode=mic&word=${encodeURIComponent(lessonRef.current.word || 'واجب')}&username=${encodeURIComponent(studentRef.current.username || '')}&sheetNumber=${encodeURIComponent(studentRef.current.sheetNumber || '')}`;
+    window.open(popupUrl, "Capture", "width=500,height=650,left=100,top=100");
+  };
+
   // ------------------- IN-PAGE CAMERA GRABBER -------------------
   const startCamera = async () => {
     setCapturedImagePreview(null);
@@ -1234,72 +1350,6 @@ export default function LessonDetail({
 
             {/* Right Column: Interactive Pronunciation & Custom Audios */}
             <div className="space-y-6">
-              {/* Target Word Interactive Pronunciation Card */}
-              {hasLetterSounds && (
-                <div className="bg-slate-800 border border-slate-700/40 rounded-3xl p-5 shadow-xl text-center flex flex-col items-center">
-                  <h3 className="text-xs font-bold text-slate-300 mb-4 flex items-center gap-1.5 justify-center">
-                    <Volume2 className="w-4.5 h-4.5 text-amber-400" />
-                    <span>انقر على كل حرف بالترتيب للاستماع لنطقه الصحيح</span>
-                  </h3>
-
-                  {/* Word Box */}
-                  <div className="px-8 py-6 bg-slate-950/80 border border-slate-850 rounded-3xl relative min-w-[200px] mb-4">
-                    <div className="flex flex-row-reverse items-center justify-center gap-5">
-                      {lesson.word.split('').map((char, index) => {
-                        const isListened = listenedLetters.has(index);
-                        const isActive = activeLetterIdx === index;
-                        return (
-                          <div key={index} className="flex flex-col items-center gap-3">
-                            {/* Interactive Letter Button */}
-                            <button
-                              onClick={() => playLetter(lesson.letterSounds[index], index)}
-                              className={`w-14 h-14 rounded-2xl text-2xl font-bold transition-all active:scale-95 cursor-pointer shadow-md flex items-center justify-center ${
-                                isActive
-                                  ? 'bg-amber-400 text-slate-950 scale-105 shadow-amber-500/10'
-                                  : isListened
-                                  ? 'bg-emerald-500/10 border-2 border-emerald-500/40 text-emerald-400'
-                                  : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
-                              }`}
-                            >
-                              {char}
-                            </button>
-                            {/* Letter dot progress marker */}
-                            <div
-                              className={`w-3.5 h-3.5 rounded-full border transition-all duration-300 ${
-                                isListened
-                                  ? 'bg-emerald-500 border-emerald-400 shadow-md shadow-emerald-500/20'
-                                  : 'bg-rose-600 border-rose-500'
-                              }`}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Feedbacks */}
-                    {letterMsg && (
-                      <p className="text-[11px] text-amber-400 font-bold mt-4 leading-relaxed max-w-xs mx-auto">
-                        {letterMsg}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Volume Control */}
-                  <div className="flex items-center gap-3 bg-slate-900/50 px-4 py-2.5 rounded-xl border border-slate-800/60 w-full max-w-xs justify-center">
-                    <span className="text-[11px] text-slate-400">حجم صوت الحروف:</span>
-                    <Volume2 className="w-3.5 h-3.5 text-slate-400" />
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={letterVolume}
-                      onChange={(e) => handleLetterVolumeChange(Number(e.target.value))}
-                      className="w-24 h-1 bg-slate-700 accent-amber-400 rounded-lg cursor-pointer appearance-none"
-                    />
-                  </div>
-                </div>
-              )}
-
               {/* Explanation Audio Card */}
               {lesson.explainSound && (
                 <div className="bg-slate-800 border border-slate-700/40 rounded-3xl p-5 shadow-xl text-center">
@@ -1396,6 +1446,72 @@ export default function LessonDetail({
                   )}
                 </div>
               )}
+
+              {/* Target Word Interactive Pronunciation Card */}
+              {hasLetterSounds && (
+                <div className="bg-slate-800 border border-slate-700/40 rounded-3xl p-5 shadow-xl text-center flex flex-col items-center">
+                  <h3 className="text-xs font-bold text-slate-300 mb-4 flex items-center gap-1.5 justify-center">
+                    <Volume2 className="w-4.5 h-4.5 text-amber-400" />
+                    <span>انقر على كل حرف بالترتيب للاستماع لنطقه الصحيح</span>
+                  </h3>
+
+                  {/* Word Box */}
+                  <div className="px-8 py-6 bg-slate-950/80 border border-slate-850 rounded-3xl relative min-w-[200px] mb-4">
+                    <div className="flex flex-row-reverse items-center justify-center gap-5">
+                      {lesson.word.split('').map((char, index) => {
+                        const isListened = listenedLetters.has(index);
+                        const isActive = activeLetterIdx === index;
+                        return (
+                          <div key={index} className="flex flex-col items-center gap-3">
+                            {/* Interactive Letter Button */}
+                            <button
+                              onClick={() => playLetter(lesson.letterSounds[index], index)}
+                              className={`w-14 h-14 rounded-2xl text-2xl font-bold transition-all active:scale-95 cursor-pointer shadow-md flex items-center justify-center ${
+                                isActive
+                                  ? 'bg-amber-400 text-slate-950 scale-105 shadow-amber-500/10'
+                                  : isListened
+                                  ? 'bg-emerald-500/10 border-2 border-emerald-500/40 text-emerald-400'
+                                  : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
+                              }`}
+                            >
+                              {char}
+                            </button>
+                            {/* Letter dot progress marker */}
+                            <div
+                              className={`w-3.5 h-3.5 rounded-full border transition-all duration-300 ${
+                                isListened
+                                  ? 'bg-emerald-500 border-emerald-400 shadow-md shadow-emerald-500/20'
+                                  : 'bg-rose-600 border-rose-500'
+                              }`}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Feedbacks */}
+                    {letterMsg && (
+                      <p className="text-[11px] text-amber-400 font-bold mt-4 leading-relaxed max-w-xs mx-auto">
+                        {letterMsg}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Volume Control */}
+                  <div className="flex items-center gap-3 bg-slate-900/50 px-4 py-2.5 rounded-xl border border-slate-800/60 w-full max-w-xs justify-center">
+                    <span className="text-[11px] text-slate-400">حجم صوت الحروف:</span>
+                    <Volume2 className="w-3.5 h-3.5 text-slate-400" />
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={letterVolume}
+                      onChange={(e) => handleLetterVolumeChange(Number(e.target.value))}
+                      className="w-24 h-1 bg-slate-700 accent-amber-400 rounded-lg cursor-pointer appearance-none"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1418,88 +1534,95 @@ export default function LessonDetail({
 
                 {/* Recorder Console Dashboard */}
                 <div className="w-full bg-slate-950 border border-slate-850 rounded-2xl p-4 flex flex-col items-center mb-4">
-                  {/* Visual Wave */}
-                  {recording ? (
-                    <div className="flex items-center gap-1.5 h-12 mb-3">
-                      <span className="w-1.5 h-6 bg-red-500 rounded-full animate-bounce" />
-                      <span className="w-1.5 h-10 bg-red-500 rounded-full animate-bounce [animation-delay:0.15s]" />
-                      <span className="w-1.5 h-12 bg-red-500 rounded-full animate-bounce [animation-delay:0.3s]" />
-                      <span className="w-1.5 h-7 bg-red-500 rounded-full animate-bounce [animation-delay:0.45s]" />
-                      <span className="w-1.5 h-4 bg-red-500 rounded-full animate-bounce [animation-delay:0.6s]" />
+                  {/* Status Indicator / Loader */}
+                  {uploadingAudio ? (
+                    <div className="flex flex-col items-center gap-2 py-4">
+                      <RefreshCw className="w-6 h-6 text-amber-400 animate-spin" />
+                      <span className="text-xs text-amber-400 font-bold">جاري الرفع والتوثيق...</span>
                     </div>
                   ) : (
                     <div className="h-12 flex items-center justify-center text-slate-500 text-xs mb-3 font-mono">
-                      {recordedAudioUrl ? 'تم تسجيل الصوت! جاهز للمراجعة والرفع.' : 'الميكروفون جاهز لبدء التسجيل'}
+                      {recording ? (
+                        <div className="flex items-center gap-1.5 h-12">
+                          <span className="w-1.5 h-6 bg-red-500 rounded-full animate-bounce" />
+                          <span className="w-1.5 h-10 bg-red-500 rounded-full animate-bounce [animation-delay:0.15s]" />
+                          <span className="w-1.5 h-12 bg-red-500 rounded-full animate-bounce [animation-delay:0.3s]" />
+                          <span className="w-1.5 h-7 bg-red-500 rounded-full animate-bounce [animation-delay:0.45s]" />
+                          <span className="w-1.5 h-4 bg-red-500 rounded-full animate-bounce [animation-delay:0.6s]" />
+                        </div>
+                      ) : recordedAudioUrl ? (
+                        'تم تسجيل وتأكيد الواجب الصوتي!'
+                      ) : (
+                        'الميكروفون جاهز لبدء التسجيل'
+                      )}
                     </div>
                   )}
 
-                  {/* Timer */}
+                  {/* Timer Display when recording */}
                   {recording && (
-                    <span className="text-red-500 text-sm font-bold block mb-4">
+                    <span className="text-red-500 text-xs font-bold block mb-4 animate-pulse">
                       جاري التسجيل: {formatTime(recordingSeconds)} ثانية
                     </span>
                   )}
 
                   {/* Local Preview Audio Player */}
-                  {recordedAudioUrl && !recording && (
+                  {recordedAudioUrl && !recording && !uploadingAudio && (
                     <audio src={recordedAudioUrl} controls className="w-full max-w-[280px] mb-4 accent-amber-400" />
                   )}
 
                   {/* Controls Row */}
-                  <div className="flex items-center justify-center gap-3 flex-wrap">
-                    {!recordedAudioUrl && !recording && (
-                      <>
+                  {!uploadingAudio && (
+                    <div className="flex items-center justify-center gap-3 flex-wrap">
+                      {recording ? (
                         <button
-                          onClick={startRecording}
-                          className="px-5 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer"
+                          onClick={() => stopRecording()}
+                          className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-500/10"
                         >
-                          <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping" />
-                          <span>ابدأ تسجيل الواجب الصوتي</span>
+                          <span>إيقاف التسجيل ومعاينة ⏹️</span>
                         </button>
-                        {/* Custom local file picker */}
-                        <label className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-slate-300 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer">
-                          <Upload className="w-4 h-4 text-amber-400" />
-                          <span>اختيار ملف</span>
-                          <input
-                            type="file"
-                            accept="audio/*"
-                            onChange={handleManualAudioUpload}
-                            className="hidden"
-                          />
-                        </label>
-                      </>
-                    )}
-
-                    {recording && (
-                      <button
-                        onClick={() => stopRecording()}
-                        className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer"
-                      >
-                        <span>إيقاف التسجيل ومعاينة ⏹️</span>
-                      </button>
-                    )}
-
-                    {recordedAudioUrl && !recording && !audioUploadSuccess && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={handleUploadAudio}
-                          disabled={uploadingAudio}
-                          className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer"
-                        >
-                          {uploadingAudio ? 'جاري الرفع...' : 'إرسال وموافق 🟢'}
-                        </button>
-                        {remainingRetries > 0 && (
+                      ) : recordedAudioUrl && !audioUploadSuccess ? (
+                        <div className="flex items-center gap-2">
                           <button
-                            onClick={handleAudioRetry}
-                            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700/50 font-bold rounded-xl transition-all flex items-center gap-1 text-xs cursor-pointer"
+                            onClick={handleUploadAudio}
+                            disabled={uploadingAudio}
+                            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/10"
                           >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                            <span>إعادة ({remainingRetries})</span>
+                            <span>إرسال وموافق 🟢</span>
                           </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                          {remainingRetries > 0 && (
+                            <button
+                              onClick={handleAudioRetry}
+                              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700/50 font-bold rounded-xl transition-all flex items-center gap-1 text-xs cursor-pointer"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span>إعادة ({remainingRetries})</span>
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            onClick={startRecording}
+                            className="px-5 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-red-500/10"
+                          >
+                            <span className="w-2 bg-white h-2 rounded-full animate-ping" />
+                            <span>ابدأ تسجيل الواجب الصوتي 🎙️</span>
+                          </button>
+                          {/* Custom local file picker */}
+                          <label className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-slate-300 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer">
+                            <Upload className="w-4 h-4 text-amber-400" />
+                            <span>اختيار ملف</span>
+                            <input
+                              type="file"
+                              accept="audio/*"
+                              onChange={handleManualAudioUpload}
+                              className="hidden"
+                            />
+                          </label>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Upload Status alerts */}
@@ -1538,92 +1661,98 @@ export default function LessonDetail({
 
                 {/* Camera Console Dashboard */}
                 <div className="w-full bg-slate-950 border border-slate-850 rounded-2xl p-4 flex flex-col items-center mb-4 min-h-[160px] justify-center">
+                  {/* Status Indicator / Loader */}
+                  {uploadingImage ? (
+                    <div className="flex flex-col items-center gap-2 py-4">
+                      <RefreshCw className="w-6 h-6 text-amber-400 animate-spin" />
+                      <span className="text-xs text-amber-400 font-bold">جاري الرفع والتوثيق...</span>
+                    </div>
+                  ) : (
+                    <div className="h-12 flex items-center justify-center text-slate-500 text-xs mb-3 font-mono">
+                      {cameraActive ? 'الكاميرا تلتقط مباشرة...' : capturedImagePreview ? 'تم التقاط صورة الواجب!' : 'الكاميرا مستعدة للبدء'}
+                    </div>
+                  )}
+
                   {/* Video Stream Preview */}
-                  {cameraActive && (
-                    <div className="relative aspect-square w-full max-w-[240px] rounded-xl overflow-hidden border border-slate-800 bg-slate-900 mb-4">
+                  {cameraActive && !uploadingImage && (
+                    <div className="relative aspect-square w-full max-w-[240px] rounded-xl overflow-hidden border border-slate-850 bg-slate-900 mb-4 shadow-lg">
                       <video
-                        ref={(el) => {
-                          videoStreamRef.current = el;
-                          if (el && cameraStream) {
-                            el.srcObject = cameraStream;
-                          }
-                        }}
+                        ref={videoStreamRef}
                         autoPlay
                         playsInline
+                        muted
                         className="w-full h-full object-cover -scale-x-100" // Mirror view
                       />
                     </div>
                   )}
 
                   {/* Captured Photo Preview */}
-                  {capturedImagePreview && (
+                  {capturedImagePreview && !cameraActive && !uploadingImage && (
                     <div className="relative aspect-square w-full max-w-[240px] rounded-xl overflow-hidden border border-slate-850 bg-slate-900 mb-4 shadow-lg">
                       <img src={capturedImagePreview} className="w-full h-full object-cover" alt="Captured" />
                     </div>
                   )}
 
                   {/* Control Actions */}
-                  <div className="flex items-center justify-center gap-3 flex-wrap">
-                    {!cameraActive && !capturedImagePreview && (
-                      <>
-                        <button
-                          onClick={startCamera}
-                          className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-500/10"
-                        >
-                          <span>التقاط بالكاميرا 📷</span>
-                        </button>
-                        <label className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-slate-300 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer">
-                          <Upload className="w-4 h-4 text-amber-400" />
-                          <span>اختيار ملف</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleManualImageUpload}
-                            className="hidden"
-                          />
-                        </label>
-                      </>
-                    )}
-
-                    {cameraActive && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={capturePhoto}
-                          className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer"
-                        >
-                          <span>قص والتقاط الصورة 📸</span>
-                        </button>
-                        <button
-                          onClick={stopCamera}
-                          className="px-4 py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
-                        >
-                          إلغاء
-                        </button>
-                      </div>
-                    )}
-
-                    {capturedImagePreview && !cameraActive && !imageUploadSuccess && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={handleUploadPhoto}
-                          disabled={uploadingImage}
-                          className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer"
-                        >
-                          {uploadingImage ? 'جاري الرفع...' : 'إرسال وموافق 🟢'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setCapturedImagePreview(null);
-                            setCapturedImageBase64(null);
-                            startCamera();
-                          }}
-                          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700/50 font-bold rounded-xl transition-all text-xs cursor-pointer"
-                        >
-                          إعادة تصوير
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  {!uploadingImage && (
+                    <div className="flex items-center justify-center gap-3 flex-wrap">
+                      {cameraActive ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={capturePhoto}
+                            className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-500/10"
+                          >
+                            <span>قص والتقاط الصورة 📸</span>
+                          </button>
+                          <button
+                            onClick={stopCamera}
+                            className="px-4 py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
+                          >
+                            إلغاء
+                          </button>
+                        </div>
+                      ) : capturedImagePreview && !imageUploadSuccess ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleUploadPhoto}
+                            disabled={uploadingImage}
+                            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer shadow-md shadow-amber-500/10"
+                          >
+                            {uploadingImage ? 'جاري الرفع...' : 'إرسال وموافق 🟢'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setCapturedImagePreview(null);
+                              setCapturedImageBase64(null);
+                              startCamera();
+                            }}
+                            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700/50 font-bold rounded-xl transition-all text-xs cursor-pointer"
+                          >
+                            إعادة تصوير 🔄
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            onClick={startCamera}
+                            className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-500/10"
+                          >
+                            <span>التقاط بالكاميرا 📷</span>
+                          </button>
+                          <label className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-slate-300 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer">
+                            <Upload className="w-4 h-4 text-amber-400" />
+                            <span>اختيار ملف</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleManualImageUpload}
+                              className="hidden"
+                            />
+                          </label>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Upload status */}
