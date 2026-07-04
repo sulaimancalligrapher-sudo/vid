@@ -74,7 +74,7 @@ export default function StudentLogin({ onLoginSuccess, onOpenSettings, isConfigu
       {/* Settings Shortcut Button */}
       <button
         onClick={onOpenSettings}
-        className="fixed top-4 right-4 p-3 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/40 text-slate-300 hover:text-amber-400 rounded-2xl cursor-pointer transition-all flex items-center gap-2 text-xs font-semibold backdrop-blur-sm shadow-xl"
+        className="fixed top-4 right-4 p-3 bg-white/90 dark:bg-slate-900/90 hover:bg-amber-50 dark:hover:bg-slate-800 border border-sky-100/80 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:text-amber-500 rounded-2xl cursor-pointer transition-all flex items-center gap-2 text-xs font-bold shadow-md"
       >
         <Settings className="w-4.5 h-4.5 animate-spin-hover" />
         <span>إعدادات الاتصال بالشيت</span>
@@ -84,16 +84,16 @@ export default function StudentLogin({ onLoginSuccess, onOpenSettings, isConfigu
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="w-full max-w-md bg-slate-800/90 border border-slate-700/50 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden"
+        className="w-full max-w-md bg-[#fefcf8] dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-md shadow-amber-100/30 dark:shadow-none relative overflow-hidden"
       >
         {/* Glow Effects */}
         <div className="absolute -top-16 -left-16 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-16 -right-16 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-16 -right-16 w-32 h-32 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="text-center mb-8 relative">
-          <span className="text-4xl">🎓</span>
-          <h1 className="text-2xl font-bold text-amber-400 mt-3">بوابة دخول الطالب</h1>
-          <p className="text-xs text-slate-400 mt-1">تعلّم القراءة وأرسل واجباتك التفاعلية بسهولة</p>
+          <span className="text-5xl">🎓</span>
+          <h1 className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-3">بوابة دخول الطالب</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-1">تعلّم القراءة وأرسل واجباتك التفاعلية بسهولة</p>
         </div>
 
         {/* Warning if Sheet connection is not configured */}
@@ -101,14 +101,14 @@ export default function StudentLogin({ onLoginSuccess, onOpenSettings, isConfigu
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="mb-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-400 text-xs flex items-start gap-3 text-right"
+            className="mb-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-600 text-xs flex items-start gap-3 text-right"
             dir="rtl"
           >
-            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
             <div>
               <p className="font-bold">تنبيه للمعلم / مدير الموقع:</p>
-              <p className="mt-1 leading-relaxed text-slate-300">
-                يرجى الضغط على زر <span className="font-bold text-amber-400">"إعدادات الاتصال بالشيت"</span> في الأعلى لتوصيل الصفحة بملف Google Sheet الخاص بك وتفعيل نظام الدخول واستدعاء الدروس بنجاح.
+              <p className="mt-1 leading-relaxed text-slate-600 dark:text-slate-300">
+                يرجى الضغط على زر <span className="font-bold text-amber-500">"إعدادات الاتصال بالشيت"</span> في الأعلى لتوصيل الصفحة بملف Google Sheet الخاص بك وتفعيل نظام الدخول واستدعاء الدروس بنجاح.
               </p>
             </div>
           </motion.div>
@@ -117,7 +117,7 @@ export default function StudentLogin({ onLoginSuccess, onOpenSettings, isConfigu
         {/* Form */}
         <form onSubmit={handleLogin} className="space-y-5 text-right" dir="rtl">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-2">اسم الطالب الثلاثي:</label>
+            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">اسم الطالب الثلاثي:</label>
             <div className="relative">
               <input
                 type="text"
@@ -125,14 +125,14 @@ export default function StudentLogin({ onLoginSuccess, onOpenSettings, isConfigu
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="أدخل اسمك بالكامل"
                 disabled={loading}
-                className="w-full px-4 py-3.5 bg-slate-950 border border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-200 rounded-2xl placeholder-slate-600 outline-none transition-all pr-12 text-sm disabled:opacity-50"
+                className="w-full px-4 py-3.5 bg-slate-50/50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100 rounded-2xl placeholder-slate-400 dark:placeholder-slate-600 outline-none transition-all pr-12 text-sm disabled:opacity-50 font-medium"
               />
-              <User className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+              <User className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-500" />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-2">رقم الورقة / شيت الطالب (Sheet Number):</label>
+            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">رقم الورقة / شيت الطالب (Sheet Number):</label>
             <div className="relative">
               <input
                 type="text"
@@ -140,9 +140,9 @@ export default function StudentLogin({ onLoginSuccess, onOpenSettings, isConfigu
                 onChange={(e) => setSheetNumber(e.target.value)}
                 placeholder="أدخل رقم شيت الطالب الخاص بك"
                 disabled={loading}
-                className="w-full px-4 py-3.5 bg-slate-950 border border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-200 rounded-2xl placeholder-slate-600 outline-none transition-all pr-12 text-sm disabled:opacity-50"
+                className="w-full px-4 py-3.5 bg-slate-50/50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100 rounded-2xl placeholder-slate-400 dark:placeholder-slate-600 outline-none transition-all pr-12 text-sm disabled:opacity-50 font-medium"
               />
-              <FileSpreadsheet className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+              <FileSpreadsheet className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-500" />
             </div>
           </div>
 
@@ -151,9 +151,9 @@ export default function StudentLogin({ onLoginSuccess, onOpenSettings, isConfigu
             <motion.div
               initial={{ opacity: 0, y: -5 }}
               animate={{ opacity: 1, y: 0 }}
-              className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl text-xs flex items-center gap-2.5"
+              className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-500 rounded-xl text-xs flex items-center gap-2.5"
             >
-              <AlertCircle className="w-4.5 h-4.5 shrink-0" />
+              <AlertCircle className="w-4.5 h-4.5 shrink-0 text-rose-500" />
               <span>{error}</span>
             </motion.div>
           )}
@@ -162,7 +162,7 @@ export default function StudentLogin({ onLoginSuccess, onOpenSettings, isConfigu
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold py-4 rounded-2xl shadow-lg shadow-amber-500/15 active:scale-98 transition-all flex items-center justify-center gap-2.5 text-sm cursor-pointer disabled:opacity-60"
+            className="w-full bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-900 font-extrabold py-4 rounded-2xl shadow-md shadow-amber-200/25 dark:shadow-none active:scale-98 transition-all flex items-center justify-center gap-2.5 text-sm cursor-pointer disabled:opacity-60"
           >
             {loading ? (
               <>

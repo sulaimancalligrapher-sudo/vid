@@ -21,6 +21,34 @@ import {
 } from '../api';
 import QuestionModal from './QuestionModal';
 
+// Helper to group Arabic base characters with their combining diacritics
+function groupArabicLetters(word: string): string[] {
+  if (!word) return [];
+  const parts: string[] = [];
+  const chars = word.split('');
+  let current = '';
+
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i];
+    const code = char.charCodeAt(0);
+    // Arabic combining diacritics range from 0x064B to 0x065F, plus 0x0670 (superscript alef)
+    const isDiacritic = (code >= 0x064B && code <= 0x065F) || code === 0x0670;
+
+    if (isDiacritic && current !== '') {
+      current += char;
+    } else {
+      if (current !== '') {
+        parts.push(current);
+      }
+      current = char;
+    }
+  }
+  if (current !== '') {
+    parts.push(current);
+  }
+  return parts;
+}
+
 declare global {
   interface Window {
     YT: any;
@@ -45,6 +73,7 @@ export default function LessonDetail({
 }: LessonDetailProps) {
   const [isReset, setIsReset] = useState(initialIsReset);
   const [activeTab, setActiveTab] = useState<'study' | 'assignment'>('study');
+  const groupedLetters = groupArabicLetters(lesson.word);
 
   const studentRef = useRef(student);
   const lessonRef = useRef(lesson);
@@ -156,7 +185,7 @@ export default function LessonDetail({
           const score = await getLetterListeningScore(lesson.comment, student.sheetNumber, student.username);
           if (score === 100 || isReset) {
             const completedSet = new Set<number>();
-            for (let i = 0; i < lesson.word.length; i++) completedSet.add(i);
+            for (let i = 0; i < groupedLetters.length; i++) completedSet.add(i);
             setListenedLetters(completedSet);
           }
         }
@@ -627,7 +656,7 @@ export default function LessonDetail({
         setListenedLetters(nextListened);
 
         // Calculate and save listening percentage
-        const pct = Math.floor((nextListened.size / lesson.word.length) * 100);
+        const pct = Math.floor((nextListened.size / groupedLetters.length) * 100);
         try {
           saveLetterListeningScore({
             sheet_number: student.sheetNumber,
@@ -1112,7 +1141,7 @@ export default function LessonDetail({
     const errors: string[] = [];
 
     // 1. Check clickable letters
-    if (hasLetterSounds && listenedLetters.size !== lesson.word.length) {
+    if (hasLetterSounds && listenedLetters.size !== groupedLetters.length) {
       errors.push('تنبيه: أنت لم تستمع إلى نطق جميع الحروف المكونة للكلمة.');
     }
 
@@ -1145,30 +1174,30 @@ export default function LessonDetail({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-4 md:p-6 text-right" dir="rtl">
+    <div className="w-full max-w-4xl mx-auto p-4 md:p-6 text-right font-sans" dir="rtl">
       {/* Back Button */}
       <button
         onClick={handleExitLesson}
         disabled={finalCompleting}
-        className="mb-6 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-2xl cursor-pointer text-xs font-bold transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+        className="mb-6 px-5 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-sky-100 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 rounded-2xl cursor-pointer text-xs font-extrabold transition-all flex items-center gap-1.5 active:scale-95 shadow-sm disabled:opacity-50"
       >
         <ArrowRight className="w-4 h-4" />
         <span>حفظ التقدم والرجوع للدروس</span>
       </button>
 
       {/* Header Info */}
-      <div className="bg-slate-800 border border-slate-700/40 rounded-3xl p-6 mb-6 shadow-xl relative overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-6 mb-6 shadow-lg shadow-sky-100/40 dark:shadow-none relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <span className="text-amber-400 text-xs font-mono block mb-1">الدرس النشط #{lessonIndex + 1}</span>
-            <h1 className="text-xl md:text-2xl font-bold text-slate-100">{lesson.comment || 'درس غير معنون'}</h1>
-            <p className="text-xs text-slate-400 mt-1">
-              الكلمة المكتوبة: <span className="text-amber-400 font-bold bg-slate-900/50 px-2.5 py-1 rounded-lg text-sm">{lesson.word}</span>
+            <span className="text-amber-600 text-xs font-bold block mb-1">الدرس النشط #{lessonIndex + 1}</span>
+            <h1 className="text-xl md:text-2xl font-extrabold text-slate-800 dark:text-slate-100">{lesson.comment || 'درس غير معنون'}</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-1.5">
+              الكلمة المكتوبة: <span className="text-indigo-600 dark:text-indigo-400 font-extrabold bg-indigo-50/70 dark:bg-indigo-950/40 px-3 py-1 rounded-xl text-sm border border-indigo-100/50 dark:border-indigo-900/50">{lesson.word}</span>
             </p>
           </div>
           {lesson.completed === 'تم' && !isReset && (
-            <div className="px-4 py-2 bg-sky-500/10 border border-sky-500/30 rounded-2xl text-sky-400 text-xs font-bold">
+            <div className="px-4 py-2 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/50 rounded-2xl text-indigo-600 dark:text-indigo-400 text-xs font-extrabold shadow-sm">
               وضع مراجعة الدرس فقط 👁️
             </div>
           )}
@@ -1182,39 +1211,39 @@ export default function LessonDetail({
             initial={{ opacity: 0, scale: 0.98, y: -5 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: -5 }}
-            className="mb-6 p-4 bg-rose-500/15 border border-rose-500/25 rounded-2xl text-rose-400 text-xs flex items-start gap-3"
+            className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-600 text-xs flex items-start gap-3 shadow-md"
           >
-            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-rose-500" />
             <div>
-              <p className="font-bold">شروط الانتقال غير مكتملة:</p>
-              <p className="mt-1 leading-relaxed text-slate-300">{exitValidationMsg}</p>
+              <p className="font-bold text-rose-700">شروط الانتقال غير مكتملة:</p>
+              <p className="mt-1 leading-relaxed text-slate-600 font-bold">{exitValidationMsg}</p>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Main Tabs */}
-      <div className="flex items-center gap-2 mb-6 border-b border-slate-800 pb-px">
+      <div className="flex items-center gap-2 mb-6 border-b border-sky-100 dark:border-slate-800 pb-px">
         <button
           onClick={() => setActiveTab('study')}
-          className={`px-5 py-3 text-xs font-bold transition-all relative cursor-pointer ${
-            activeTab === 'study' ? 'text-amber-400' : 'text-slate-400 hover:text-slate-300'
+          className={`px-5 py-3 text-xs font-extrabold transition-all relative cursor-pointer ${
+            activeTab === 'study' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
           }`}
         >
           <span>قسم الشرح والمشاهدة 📺</span>
           {activeTab === 'study' && (
-            <motion.div layoutId="tab-line" className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-400" />
+            <motion.div layoutId="tab-line" className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 dark:bg-indigo-500 rounded-full" />
           )}
         </button>
         <button
           onClick={() => setActiveTab('assignment')}
-          className={`px-5 py-3 text-xs font-bold transition-all relative cursor-pointer ${
-            activeTab === 'assignment' ? 'text-amber-400' : 'text-slate-400 hover:text-slate-300'
+          className={`px-5 py-3 text-xs font-extrabold transition-all relative cursor-pointer ${
+            activeTab === 'assignment' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
           }`}
         >
           <span>قسم رفع وتصوير الواجبات 📸</span>
           {activeTab === 'assignment' && (
-            <motion.div layoutId="tab-line" className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-400" />
+            <motion.div layoutId="tab-line" className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 dark:bg-indigo-500 rounded-full" />
           )}
         </button>
       </div>
@@ -1227,17 +1256,17 @@ export default function LessonDetail({
             <div className="space-y-6">
               {/* Image Preview Card */}
               {lesson.image && (
-                <div className="bg-slate-800 border border-slate-700/40 rounded-3xl p-4 shadow-xl text-center">
-                  <h3 className="text-xs font-bold text-slate-300 mb-3 flex items-center gap-1.5 justify-center">
-                    <ImageIcon className="w-4.5 h-4.5 text-amber-400" />
+                <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-5 shadow-lg shadow-sky-100/40 dark:shadow-none text-center">
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3.5 flex items-center gap-1.5 justify-center">
+                    <ImageIcon className="w-5 h-5 text-indigo-500" />
                     <span>صورة توضيحية للدرس</span>
                   </h3>
                   <div
                     onClick={() => setLightboxImg(lesson.image)}
-                    className="relative aspect-video rounded-2xl overflow-hidden border border-slate-700 cursor-zoom-in group"
+                    className="relative aspect-video rounded-2xl overflow-hidden border border-sky-100 dark:border-slate-800 cursor-zoom-in group shadow-inner"
                   >
                     <img src={lesson.image} className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-300" alt="Lesson Visual" />
-                    <div className="absolute inset-0 bg-slate-950/20 group-hover:bg-transparent transition-colors" />
+                    <div className="absolute inset-0 bg-slate-900/10 group-hover:bg-transparent transition-colors" />
                   </div>
                 </div>
               )}
@@ -1246,62 +1275,62 @@ export default function LessonDetail({
               {lesson.youtubeUrl && (
                 <div
                   ref={videoCardRef}
-                  className={`bg-slate-800 border border-slate-700/40 rounded-3xl p-4 shadow-xl flex flex-col relative transition-all ${
-                    ytFullscreen ? 'fixed inset-0 z-50 w-screen h-screen rounded-none p-6 bg-slate-950 border-none' : ''
+                  className={`bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-5 shadow-lg shadow-sky-100/40 dark:shadow-none flex flex-col relative transition-all ${
+                    ytFullscreen ? 'fixed inset-0 z-50 w-screen h-screen rounded-none p-6 bg-slate-900 border-none' : ''
                   }`}
                 >
-                  <h3 className={`text-xs font-bold text-slate-300 mb-3 flex items-center gap-1.5 justify-center ${ytFullscreen ? 'text-sm mb-4' : ''}`}>
-                    <Video className="w-4.5 h-4.5 text-amber-400" />
+                  <h3 className={`text-sm font-bold text-slate-800 dark:text-slate-100 mb-3.5 flex items-center gap-1.5 justify-center ${ytFullscreen ? 'text-base mb-5' : ''}`}>
+                    <Video className="w-5 h-5 text-indigo-500 animate-pulse" />
                     <span>فيديو الدرس التفاعلي المساعد</span>
                   </h3>
                   
                   {/* Aspect video player frame wrapper */}
-                  <div className={`relative ${ytFullscreen ? 'flex-grow h-0 w-full mb-6' : 'aspect-video w-full mb-3'} rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950`}>
+                  <div className={`relative ${ytFullscreen ? 'flex-grow h-0 w-full mb-6' : 'aspect-video w-full mb-3.5'} rounded-2xl overflow-hidden border border-sky-100 dark:border-slate-800 bg-slate-950`}>
                     <div id="yt-player-frame" className="w-full h-full" />
                     {/* Transparent overlay blocks skipping on the YouTube iframe */}
                     <div className="absolute inset-0 bg-transparent z-20 pointer-events-auto" />
                   </div>
 
                   {/* Custom Controls */}
-                  <div className="flex items-center justify-between gap-4 p-2.5 bg-slate-900 rounded-2xl w-full">
+                  <div className="flex items-center justify-between gap-4 p-3 bg-indigo-50/70 dark:bg-slate-950 border border-indigo-100/50 dark:border-slate-800 rounded-2xl w-full shadow-inner">
                     <button
                       onClick={ytPlaying ? handleYtPause : handleYtPlay}
-                      className="p-3 bg-amber-500 text-slate-950 rounded-xl hover:bg-amber-600 transition-all active:scale-90 cursor-pointer shadow-md shadow-amber-500/10"
+                      className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all active:scale-90 cursor-pointer shadow-md shadow-indigo-600/20"
                     >
-                      {ytPlaying ? <Pause className="w-4.5 h-4.5 fill-slate-950" /> : <Play className="w-4.5 h-4.5 fill-slate-950" />}
+                      {ytPlaying ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white ml-0.5" />}
                     </button>
 
                     {/* Progress Bar */}
                     <div
                       onClick={handleYtSeekBarClick}
-                      className="flex-grow h-2.5 bg-slate-800 rounded-full cursor-pointer relative"
+                      className="flex-grow h-3 bg-indigo-100 dark:bg-indigo-950 rounded-full cursor-pointer relative shadow-inner overflow-hidden"
                     >
                       <div
                         style={{ width: `${ytProgress}%` }}
-                        className="h-full bg-amber-400 rounded-full transition-all duration-300"
+                        className="h-full bg-indigo-600 rounded-full transition-all duration-300"
                       />
                     </div>
 
                     {/* Volume */}
                     <div className="flex items-center gap-2">
-                      <Volume2 className="w-4 h-4 text-slate-400" />
+                      <Volume2 className="w-4 h-4 text-indigo-500" />
                       <input
                         type="range"
                         min="0"
                         max="100"
                         value={ytVolume}
                         onChange={(e) => handleYtVolumeChange(Number(e.target.value))}
-                        className="w-16 h-1 bg-slate-700 accent-amber-400 rounded-lg cursor-pointer appearance-none"
+                        className="w-16 h-1 bg-indigo-200 dark:bg-indigo-900 accent-indigo-600 rounded-lg cursor-pointer appearance-none"
                       />
                     </div>
 
                     {/* Fullscreen Button */}
                     <button
                       onClick={handleToggleFullscreen}
-                      className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-all active:scale-90 cursor-pointer shadow-md"
+                      className="p-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 border border-sky-100 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 rounded-xl transition-all active:scale-90 cursor-pointer shadow-sm"
                       title={ytFullscreen ? 'تصغير الشاشة' : 'تكبير الشاشة'}
                     >
-                      {ytFullscreen ? <Minimize className="w-4.5 h-4.5" /> : <Maximize className="w-4.5 h-4.5" />}
+                      {ytFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
                     </button>
                   </div>
 
@@ -1330,44 +1359,44 @@ export default function LessonDetail({
             <div className="space-y-6">
               {/* Explanation Audio Card */}
               {lesson.explainSound && (
-                <div className="bg-slate-800 border border-slate-700/40 rounded-3xl p-5 shadow-xl text-center">
-                  <h3 className="text-xs font-bold text-slate-300 mb-3 flex items-center gap-1.5 justify-center">
-                    <Volume2 className="w-4.5 h-4.5 text-amber-400 animate-pulse" />
+                <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-5 shadow-lg shadow-sky-100/40 dark:shadow-none text-center">
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3.5 flex items-center gap-1.5 justify-center">
+                    <Volume2 className="w-5 h-5 text-indigo-500 animate-pulse" />
                     <span>صوت شرح الدرس وقراءة المعلم</span>
                   </h3>
 
                   {/* custom controller panel */}
-                  <div className="flex items-center justify-between gap-4 p-3 bg-slate-900 rounded-2xl mb-2.5">
+                  <div className="flex items-center justify-between gap-4 p-3 bg-indigo-50/70 dark:bg-slate-950 border border-indigo-100/50 dark:border-slate-800 rounded-2xl mb-3 shadow-inner">
                     <button
                       onClick={audioPlaying ? pauseExplanationAudio : playExplanationAudio}
-                      className="p-3 bg-amber-500 text-slate-950 rounded-xl hover:bg-amber-600 active:scale-90 transition-all cursor-pointer shadow-md"
+                      className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 active:scale-90 transition-all cursor-pointer shadow-md shadow-indigo-600/20"
                     >
-                      {audioPlaying ? <Pause className="w-4.5 h-4.5 fill-slate-950" /> : <Play className="w-4.5 h-4.5 fill-slate-950" />}
+                      {audioPlaying ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white ml-0.5" />}
                     </button>
 
                     <div
                       onClick={handleAudioSeekBarClick}
-                      className="flex-grow h-2.5 bg-slate-800 rounded-full cursor-pointer relative"
+                      className="flex-grow h-3 bg-indigo-100 dark:bg-indigo-950 rounded-full cursor-pointer relative shadow-inner overflow-hidden"
                     >
                       <div
                         style={{ width: `${audioProgress}%` }}
-                        className="h-full bg-amber-400 rounded-full transition-all duration-300"
+                        className="h-full bg-indigo-600 rounded-full transition-all duration-300"
                       />
                     </div>
 
-                    <span className="text-[10px] text-slate-400 font-mono select-none">{audioTimeStr}</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold select-none">{audioTimeStr}</span>
                   </div>
 
                   {/* volume bar */}
                   <div className="flex items-center gap-2 justify-end px-1.5">
-                    <Volume2 className="w-3.5 h-3.5 text-slate-500" />
+                    <Volume2 className="w-3.5 h-3.5 text-indigo-500" />
                     <input
                       type="range"
                       min="0"
                       max="100"
                       value={audioVolume}
                       onChange={(e) => handleAudioVolumeChange(Number(e.target.value))}
-                      className="w-20 h-1 bg-slate-700 accent-amber-400 rounded-lg cursor-pointer appearance-none"
+                      className="w-20 h-1 bg-indigo-200 dark:bg-indigo-900 accent-indigo-600 rounded-lg cursor-pointer appearance-none"
                     />
                   </div>
                 </div>
@@ -1375,35 +1404,33 @@ export default function LessonDetail({
 
               {/* Full Lesson Audio Listening Score Card */}
               {lesson.fullSound && (
-                <div className="bg-slate-800 border border-slate-700/40 rounded-3xl p-5 shadow-xl text-center">
-                  <h3 className="text-xs font-bold text-slate-300 mb-2 flex items-center gap-1.5 justify-center">
-                    <Sparkles className="w-4.5 h-4.5 text-amber-400 animate-bounce" />
+                <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-5 shadow-lg shadow-sky-100/40 dark:shadow-none text-center">
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-2 flex items-center gap-1.5 justify-center">
+                    <Sparkles className="w-5 h-5 text-amber-500 animate-bounce" />
                     <span>الاستماع الكامل الموجه للدرس</span>
                   </h3>
-                  <p className="text-[10px] text-slate-400 leading-relaxed mb-4 max-w-xs mx-auto">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mb-4 max-w-xs mx-auto font-medium">
                     {lesson.instruction || 'يرجى الاستماع بالكامل للدرس الصوتي لتثبيت الفهم والحصول على العلامة التامة.'}
                   </p>
 
-                  <div className="flex flex-col items-center gap-3 bg-slate-950/85 p-4 rounded-2xl border border-slate-850">
+                  <div className="flex flex-col items-center gap-3 bg-indigo-50/70 dark:bg-slate-950 border border-indigo-100/50 dark:border-slate-800 p-4 rounded-2xl shadow-inner">
                     <button
                       onClick={fullAudioPlaying ? pauseFullAudio : playFullAudio}
-                      className="w-14 h-14 bg-gradient-to-tr from-amber-500 to-amber-600 text-slate-950 hover:from-amber-600 hover:to-amber-700 rounded-full flex items-center justify-center cursor-pointer shadow-lg shadow-amber-500/10 active:scale-95 transition-all"
+                      className="w-14 h-14 bg-gradient-to-tr from-amber-400 to-amber-50 text-slate-950 hover:from-amber-500 hover:to-amber-600 rounded-full flex items-center justify-center cursor-pointer shadow-lg shadow-amber-400/20 active:scale-95 transition-all"
                     >
                       {fullAudioPlaying ? <Pause className="w-6 h-6 fill-slate-950" /> : <Play className="w-6 h-6 fill-slate-950 ml-1" />}
                     </button>
 
-                    <span className="text-xs font-mono text-slate-300 select-none font-bold">{fullAudioTimeStr}</span>
-
-                    {/* listening volume */}
+                    <span className="text-xs font-mono text-indigo-950 dark:text-indigo-200 select-none font-extrabold">{fullAudioTimeStr}</span>
                     <div className="flex items-center gap-2 mt-1">
-                      <Volume2 className="w-3.5 h-3.5 text-slate-500" />
+                      <Volume2 className="w-3.5 h-3.5 text-indigo-500" />
                       <input
                         type="range"
                         min="0"
                         max="100"
                         value={fullAudioVolume}
                         onChange={(e) => handleFullAudioVolumeChange(Number(e.target.value))}
-                        className="w-20 h-1 bg-slate-700 accent-amber-400 rounded-lg cursor-pointer appearance-none"
+                        className="w-20 h-1 bg-indigo-200 dark:bg-indigo-900 accent-indigo-600 rounded-lg cursor-pointer appearance-none"
                       />
                     </div>
                   </div>
@@ -1415,8 +1442,8 @@ export default function LessonDetail({
                       animate={{ opacity: 1, y: 0 }}
                       className={`mt-4 p-3 rounded-xl border text-xs leading-relaxed ${
                         fullAudioMessage.success
-                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                          : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-700'
+                          : 'bg-rose-50/70 border-rose-200 text-rose-700'
                       }`}
                     >
                       {fullAudioMessage.text}
@@ -1427,75 +1454,58 @@ export default function LessonDetail({
 
               {/* Target Word Interactive Pronunciation Card */}
               {hasLetterSounds && (
-                <div className="bg-slate-800 border border-slate-700/40 rounded-3xl p-5 shadow-xl text-center flex flex-col items-center">
-                  <h3 className="text-xs font-bold text-slate-300 mb-4 flex items-center gap-1.5 justify-center">
-                    <Volume2 className="w-4.5 h-4.5 text-amber-400" />
-                    <span>انقر على كل حرف بالترتيب للاستماع لنطقه الصحيح</span>
+                <div className="bg-[#fefcf8] dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-3xl p-6 shadow-md shadow-amber-100/25 dark:shadow-none text-center flex flex-col items-center transition-colors duration-300">
+                  <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1.5 justify-center">
+                    <Volume2 className="w-5 h-5 text-amber-500 animate-pulse" />
+                    <span>انقر على الحروف مباشرة داخل الكلمة للاستماع لنطقها الصحيح</span>
                   </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mb-4">
+                    هذا يعلمك كيف يتغير شكل الحرف عند اتصاله بباقي الحروف في الكلمة.
+                  </p>
 
                   {/* Word Box */}
-                  <div className="px-8 py-6 bg-slate-950/80 border border-slate-850 rounded-3xl relative min-w-[200px] mb-4 w-full">
-                    {/* Beautiful large connected Arabic text block */}
-                    <div className="text-center py-4 select-none overflow-x-auto w-full scrollbar-thin scrollbar-thumb-slate-800" dir="rtl">
-                      <div className="inline-block text-6xl md:text-8xl font-bold font-sans tracking-normal leading-relaxed text-slate-100 bg-slate-900/40 px-10 py-6 rounded-3xl border border-slate-800/80 whitespace-nowrap">
-                        {lesson.word.split('').map((char, index) => {
+                  <div className="px-8 py-8 bg-[#fffbf4] dark:bg-slate-950 border border-amber-100/50 dark:border-slate-800/80 rounded-3xl relative min-w-[240px] mb-4 w-full shadow-inner transition-colors duration-300">
+                    {/* Beautiful natural complete Arabic word display */}
+                    <div className="text-center py-6 select-none w-full" dir="rtl">
+                      <div className="inline-block text-6xl md:text-8xl font-bold tracking-normal leading-relaxed text-slate-800 dark:text-slate-100 bg-[#faf6ed] dark:bg-slate-900 px-12 py-6 rounded-3xl border border-amber-100/40 dark:border-slate-800/60 shadow-sm whitespace-nowrap transition-colors duration-300">
+                        {groupedLetters.map((char, index) => {
                           const isListened = listenedLetters.has(index);
                           const isActive = activeLetterIdx === index;
-                          const charWithJoiners = (index > 0 ? '\u200D' : '') + char + (index < lesson.word.length - 1 ? '\u200D' : '');
                           return (
                             <span
                               key={index}
                               onClick={() => playLetter(lesson.letterSounds[index], index)}
-                              className="relative inline cursor-pointer select-none transition-all duration-150"
+                              className={`cursor-pointer select-none transition-colors duration-200 hover:text-amber-500 dark:hover:text-amber-400 ${
+                                isActive
+                                  ? 'text-amber-500 dark:text-amber-400 font-extrabold underline decoration-amber-400 dark:decoration-amber-500 decoration-wavy underline-offset-8'
+                                  : isListened
+                                  ? 'text-emerald-500 dark:text-emerald-400 font-bold'
+                                  : 'text-indigo-950 dark:text-indigo-200'
+                              }`}
+                              title={`اضغط للاستماع لصوت الحرف`}
                             >
-                              {/* Beautiful highlighted box surrounding the active letter */}
-                              {isActive && (
-                                <span className="absolute -inset-x-1.5 -inset-y-3 bg-amber-400/25 border-2 border-amber-400 rounded-xl shadow-[0_0_20px_rgba(251,191,36,0.8)] z-0 pointer-events-none" />
-                              )}
-
-                              {/* Highlighted box surrounding already listened letters */}
-                              {isListened && !isActive && (
-                                <span className="absolute -inset-x-1 -inset-y-2.5 bg-emerald-500/15 border-2 border-emerald-500/40 rounded-xl z-0 pointer-events-none" />
-                              )}
-
-                              <span
-                                className={`relative z-10 transition-colors duration-150 ${
-                                  isActive
-                                    ? 'text-amber-400 font-extrabold'
-                                    : isListened
-                                    ? 'text-emerald-400'
-                                    : 'text-slate-100 hover:text-amber-300'
-                                }`}
-                              >
-                                {charWithJoiners}
-                              </span>
+                              {char}
                             </span>
                           );
                         })}
                       </div>
                     </div>
 
-                    {/* Progress dots row matching the character positions visually as a list */}
-                    <div className="flex flex-row-reverse items-center justify-center gap-3 mt-3 pt-3 border-t border-slate-900/60">
-                      {lesson.word.split('').map((char, index) => {
+                    {/* Highly intuitive visual guides below the word showing progress */}
+                    <div className="flex flex-row-reverse items-center justify-center gap-3 mt-4" dir="rtl">
+                      {groupedLetters.map((char, index) => {
                         const isListened = listenedLetters.has(index);
                         const isActive = activeLetterIdx === index;
                         return (
-                          <div key={index} className="flex flex-col items-center gap-1.5">
-                            {/* Small clickable dot */}
-                            <button
-                              onClick={() => playLetter(lesson.letterSounds[index], index)}
-                              className={`w-3.5 h-3.5 rounded-full border transition-all duration-300 cursor-pointer ${
-                                isActive
-                                  ? 'bg-amber-400 border-amber-300 scale-125 shadow-md shadow-amber-500/30'
-                                  : isListened
-                                  ? 'bg-emerald-500 border-emerald-400 shadow-md shadow-emerald-500/20'
-                                  : 'bg-slate-750 border-slate-600 hover:border-slate-500'
-                              }`}
-                              title={`استمع لحرف: ${char}`}
-                            />
-                            {/* Tiny label showing the isolated character */}
-                            <span className="text-[10px] text-slate-500 font-medium select-none">{char}</span>
+                          <div key={index} className="flex flex-col items-center gap-1">
+                            <span className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
+                              isActive
+                                ? 'bg-amber-400 dark:bg-amber-300 ring-4 ring-amber-100 dark:ring-amber-950/50 scale-125'
+                                : isListened
+                                ? 'bg-emerald-500 dark:bg-emerald-400 shadow-sm'
+                                : 'bg-slate-200 dark:bg-slate-800'
+                            }`} />
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold select-none">{char}</span>
                           </div>
                         );
                       })}
@@ -1503,27 +1513,28 @@ export default function LessonDetail({
 
                     {/* Feedbacks */}
                     {letterMsg && (
-                      <p className="text-[11px] text-amber-400 font-bold mt-4 leading-relaxed max-w-xs mx-auto">
+                      <p className="text-xs text-amber-700 font-extrabold mt-5 leading-relaxed max-w-xs mx-auto bg-amber-50/50 px-4 py-2 rounded-2xl border border-amber-100/40">
                         {letterMsg}
                       </p>
                     )}
                   </div>
 
                   {/* Volume Control */}
-                  <div className="flex items-center gap-3 bg-slate-900/50 px-4 py-2.5 rounded-xl border border-slate-800/60 w-full max-w-xs justify-center">
-                    <span className="text-[11px] text-slate-400">حجم صوت الحروف:</span>
-                    <Volume2 className="w-3.5 h-3.5 text-slate-400" />
+                  <div className="flex items-center gap-3 bg-amber-50/30 px-4 py-2.5 rounded-xl border border-amber-100/40 w-full max-w-xs justify-center">
+                    <span className="text-[11px] text-slate-500 font-bold">حجم صوت الحروف:</span>
+                    <Volume2 className="w-3.5 h-3.5 text-slate-500" />
                     <input
                       type="range"
                       min="0"
                       max="100"
                       value={letterVolume}
                       onChange={(e) => handleLetterVolumeChange(Number(e.target.value))}
-                      className="w-24 h-1 bg-slate-700 accent-amber-400 rounded-lg cursor-pointer appearance-none"
+                      className="w-24 h-1 bg-slate-200 accent-amber-500 rounded-lg cursor-pointer appearance-none"
                     />
                   </div>
                 </div>
               )}
+
             </div>
           </div>
         </div>
@@ -1535,25 +1546,25 @@ export default function LessonDetail({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Left Column: Voice Recorder assignment */}
             {(lesson.allowRecording === 'نعم' || lesson.allowRecording === '') && (
-              <div className="bg-slate-800 border border-slate-700/40 rounded-3xl p-5 shadow-xl text-center flex flex-col items-center">
-                <div className="p-2.5 bg-rose-500/10 border border-rose-500/25 rounded-2xl text-rose-400 mb-3.5">
+              <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-5 shadow-lg shadow-sky-100/40 dark:shadow-none text-center flex flex-col items-center">
+                <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 text-rose-500 dark:text-rose-400 mb-3.5 shadow-sm">
                   <Mic className="w-6 h-6 animate-pulse" />
                 </div>
-                <h3 className="text-sm font-bold text-slate-200">الواجب الصوتي لقراءة الطالب 🎙️</h3>
-                <p className="text-[10px] text-slate-400 leading-relaxed mt-1 max-w-xs mx-auto mb-4">
+                <h3 className="text-sm font-extrabold text-slate-850 dark:text-slate-100">الواجب الصوتي لقراءة الطالب 🎙️</h3>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold leading-relaxed mt-1 max-w-xs mx-auto mb-4">
                   سجل صوتك أثناء قراءة الكلمة المستهدفة ({lesson.word}) أو اختر ملفاً صوتياً جاهزاً لإرساله وتصحيحه.
                 </p>
 
                 {/* Recorder Console Dashboard */}
-                <div className="w-full bg-slate-950 border border-slate-850 rounded-2xl p-4 flex flex-col items-center mb-4">
+                <div className="w-full bg-slate-50 dark:bg-slate-950 border border-sky-100/80 dark:border-slate-850 rounded-2xl p-4 flex flex-col items-center mb-4 shadow-inner">
                   {/* Status Indicator / Loader */}
                   {uploadingAudio ? (
                     <div className="flex flex-col items-center gap-2 py-4">
-                      <RefreshCw className="w-6 h-6 text-amber-400 animate-spin" />
-                      <span className="text-xs text-amber-400 font-bold">جاري الرفع والتوثيق...</span>
+                      <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin" />
+                      <span className="text-xs text-indigo-500 font-extrabold">جاري الرفع والتوثيق...</span>
                     </div>
                   ) : (
-                    <div className="h-12 flex items-center justify-center text-slate-500 text-xs mb-3 font-mono">
+                    <div className="h-12 flex items-center justify-center text-slate-500 dark:text-slate-400 text-xs mb-3 font-bold">
                       {recording ? (
                         <div className="flex items-center gap-1.5 h-12">
                           <span className="w-1.5 h-6 bg-red-500 rounded-full animate-bounce" />
@@ -1572,14 +1583,14 @@ export default function LessonDetail({
 
                   {/* Timer Display when recording */}
                   {recording && (
-                    <span className="text-red-500 text-xs font-bold block mb-4 animate-pulse">
+                    <span className="text-red-500 text-xs font-extrabold block mb-4 animate-pulse">
                       جاري التسجيل: {formatTime(recordingSeconds)} ثانية
                     </span>
                   )}
 
                   {/* Local Preview Audio Player */}
                   {recordedAudioUrl && !recording && !uploadingAudio && (
-                    <audio src={recordedAudioUrl} controls className="w-full max-w-[280px] mb-4 accent-amber-400" />
+                    <audio src={recordedAudioUrl} controls className="w-full max-w-[280px] mb-4 accent-indigo-500" />
                   )}
 
                   {/* Controls Row */}
@@ -1588,7 +1599,7 @@ export default function LessonDetail({
                       {recording ? (
                         <button
                           onClick={() => stopRecording()}
-                          className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-500/10"
+                          className="px-5 py-3 bg-amber-400 hover:bg-amber-500 text-slate-900 border border-amber-500/20 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-400/20"
                         >
                           <span>إيقاف التسجيل ومعاينة ⏹️</span>
                         </button>
@@ -1597,14 +1608,14 @@ export default function LessonDetail({
                           <button
                             onClick={handleUploadAudio}
                             disabled={uploadingAudio}
-                            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/10"
+                            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/15"
                           >
                             <span>إرسال وموافق 🟢</span>
                           </button>
                           {remainingRetries > 0 && (
                             <button
                               onClick={handleAudioRetry}
-                              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700/50 font-bold rounded-xl transition-all flex items-center gap-1 text-xs cursor-pointer"
+                              className="px-4 py-2.5 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-sky-100 dark:border-slate-800 font-extrabold rounded-xl transition-all flex items-center gap-1 text-xs cursor-pointer shadow-sm"
                             >
                               <RefreshCw className="w-3.5 h-3.5" />
                               <span>إعادة ({remainingRetries})</span>
@@ -1615,14 +1626,14 @@ export default function LessonDetail({
                         <>
                           <button
                             onClick={startRecording}
-                            className="px-5 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-red-500/10"
+                            className="px-5 py-3 bg-red-500 hover:bg-red-600 text-white font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-red-500/15"
                           >
                             <span className="w-2 bg-white h-2 rounded-full animate-ping" />
                             <span>ابدأ تسجيل الواجب الصوتي 🎙️</span>
                           </button>
                           {/* Custom local file picker */}
-                          <label className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-slate-300 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer">
-                            <Upload className="w-4 h-4 text-amber-400" />
+                          <label className="px-4 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-sm">
+                            <Upload className="w-4 h-4 text-indigo-500" />
                             <span>اختيار ملف</span>
                             <input
                               type="file"
@@ -1642,12 +1653,12 @@ export default function LessonDetail({
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs flex items-center gap-2 w-full justify-center"
+                    className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs flex items-center gap-2 w-full justify-center shadow-sm font-bold"
                   >
-                    <CheckCircle2 className="w-4.5 h-4.5" />
+                    <CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" />
                     <span>تم إرسال تسليم واجبك الصوتي بنجاح! 🎉</span>
                     {savedRecordingLink && (
-                      <a href={savedRecordingLink} target="_blank" className="text-amber-400 underline font-semibold mr-1.5 flex items-center gap-0.5">
+                      <a href={savedRecordingLink} target="_blank" className="text-indigo-600 underline font-extrabold mr-1.5 flex items-center gap-0.5">
                         استماع
                       </a>
                     )}
@@ -1655,39 +1666,39 @@ export default function LessonDetail({
                 )}
 
                 {audioUploadError && (
-                  <p className="text-[11px] text-rose-400 leading-relaxed font-semibold mt-2">{audioUploadError}</p>
+                  <p className="text-[11px] text-rose-500 leading-relaxed font-extrabold mt-2">{audioUploadError}</p>
                 )}
               </div>
             )}
 
             {/* Right Column: Photo assignment */}
             {(lesson.allowUpload === 'نعم' || lesson.allowUpload === '') && (
-              <div className="bg-slate-800 border border-slate-700/40 rounded-3xl p-5 shadow-xl text-center flex flex-col items-center">
-                <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/25 rounded-2xl text-emerald-400 mb-3.5">
-                  <ImageIcon className="w-6 h-6" />
+              <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-5 shadow-lg shadow-sky-100/40 dark:shadow-none text-center flex flex-col items-center">
+                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 text-indigo-500 dark:text-indigo-400 mb-3.5 shadow-sm">
+                  <ImageIcon className="w-6 h-6 animate-pulse" />
                 </div>
-                <h3 className="text-sm font-bold text-slate-200">{lesson.uploadTitle || 'رفع صورة الواجب المساعد 📸'}</h3>
-                <p className="text-[10px] text-slate-400 leading-relaxed mt-1 max-w-xs mx-auto mb-4">
+                <h3 className="text-sm font-extrabold text-slate-850 dark:text-slate-100">{lesson.uploadTitle || 'رفع صورة الواجب المساعد 📸'}</h3>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold leading-relaxed mt-1 max-w-xs mx-auto mb-4">
                   التقط صورة بكاميرا جهازك الآن مع علامة مائية ذكية، أو اختر صورة جاهزة لإرسالها.
                 </p>
 
                 {/* Camera Console Dashboard */}
-                <div className="w-full bg-slate-950 border border-slate-850 rounded-2xl p-4 flex flex-col items-center mb-4 min-h-[160px] justify-center">
+                <div className="w-full bg-slate-50 dark:bg-slate-950 border border-sky-100/80 dark:border-slate-850 rounded-2xl p-4 flex flex-col items-center mb-4 min-h-[160px] justify-center shadow-inner">
                   {/* Status Indicator / Loader */}
                   {uploadingImage ? (
                     <div className="flex flex-col items-center gap-2 py-4">
-                      <RefreshCw className="w-6 h-6 text-amber-400 animate-spin" />
-                      <span className="text-xs text-amber-400 font-bold">جاري الرفع والتوثيق...</span>
+                      <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin" />
+                      <span className="text-xs text-indigo-500 font-extrabold">جاري الرفع والتوثيق...</span>
                     </div>
                   ) : (
-                    <div className="h-12 flex items-center justify-center text-slate-500 text-xs mb-3 font-mono">
+                    <div className="h-12 flex items-center justify-center text-slate-500 dark:text-slate-400 text-xs mb-3 font-bold">
                       {cameraActive ? 'الكاميرا تلتقط مباشرة...' : capturedImagePreview ? 'تم التقاط صورة الواجب!' : 'الكاميرا مستعدة للبدء'}
                     </div>
                   )}
 
                   {/* Video Stream Preview */}
                   {cameraActive && !uploadingImage && (
-                    <div className="relative aspect-square w-full max-w-[480px] rounded-2xl overflow-hidden border-2 border-amber-500/30 bg-slate-900 mb-4 shadow-xl">
+                    <div className="relative aspect-square w-full max-w-[480px] rounded-2xl overflow-hidden border-2 border-indigo-500 bg-slate-900 mb-4 shadow-xl">
                       <video
                         ref={videoStreamRef}
                         autoPlay
@@ -1700,7 +1711,7 @@ export default function LessonDetail({
 
                   {/* Captured Photo Preview */}
                   {capturedImagePreview && !cameraActive && !uploadingImage && (
-                    <div className="relative aspect-square w-full max-w-[480px] rounded-2xl overflow-hidden border-2 border-emerald-500/30 bg-slate-900 mb-4 shadow-xl">
+                    <div className="relative aspect-square w-full max-w-[480px] rounded-2xl overflow-hidden border-2 border-emerald-500 bg-slate-900 mb-4 shadow-xl">
                       <img src={capturedImagePreview} className="w-full h-full object-cover" alt="Captured" />
                     </div>
                   )}
@@ -1712,13 +1723,13 @@ export default function LessonDetail({
                         <div className="flex items-center gap-2">
                           <button
                             onClick={capturePhoto}
-                            className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-500/10"
+                            className="px-5 py-3 bg-amber-400 hover:bg-amber-500 text-slate-900 border border-amber-500/20 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-400/20"
                           >
                             <span>قص والتقاط الصورة 📸</span>
                           </button>
                           <button
                             onClick={stopCamera}
-                            className="px-4 py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
+                            className="px-4 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 rounded-xl text-xs font-extrabold cursor-pointer shadow-sm"
                           >
                             إلغاء
                           </button>
@@ -1728,7 +1739,7 @@ export default function LessonDetail({
                           <button
                             onClick={handleUploadPhoto}
                             disabled={uploadingImage}
-                            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer shadow-md shadow-amber-500/10"
+                            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/15"
                           >
                             {uploadingImage ? 'جاري الرفع...' : 'إرسال وموافق 🟢'}
                           </button>
@@ -1738,7 +1749,7 @@ export default function LessonDetail({
                               setCapturedImageBase64(null);
                               startCamera();
                             }}
-                            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700/50 font-bold rounded-xl transition-all text-xs cursor-pointer"
+                            className="px-4 py-2.5 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 font-extrabold rounded-xl transition-all text-xs cursor-pointer shadow-sm"
                           >
                             إعادة تصوير 🔄
                           </button>
@@ -1747,12 +1758,12 @@ export default function LessonDetail({
                         <>
                           <button
                             onClick={startCamera}
-                            className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-500/10"
+                            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-indigo-600/15"
                           >
                             <span>التقاط بالكاميرا 📷</span>
                           </button>
-                          <label className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-slate-300 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer">
-                            <Upload className="w-4 h-4 text-amber-400" />
+                          <label className="px-4 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-sm">
+                            <Upload className="w-4 h-4 text-indigo-500" />
                             <span>اختيار ملف</span>
                             <input
                               type="file"
@@ -1772,12 +1783,12 @@ export default function LessonDetail({
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs flex items-center gap-2 w-full justify-center"
+                    className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs flex items-center gap-2 w-full justify-center shadow-sm font-bold"
                   >
-                    <CheckCircle2 className="w-4.5 h-4.5" />
+                    <CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" />
                     <span>تم إرسال الصورة وتوثيقها بنجاح! 🎉</span>
                     {savedImageLink && (
-                      <a href={savedImageLink} target="_blank" className="text-amber-400 underline font-semibold mr-1.5 flex items-center gap-0.5">
+                      <a href={savedImageLink} target="_blank" className="text-indigo-600 underline font-extrabold mr-1.5 flex items-center gap-0.5">
                         معاينة
                       </a>
                     )}
@@ -1785,7 +1796,7 @@ export default function LessonDetail({
                 )}
 
                 {imageUploadError && (
-                  <p className="text-[11px] text-rose-400 leading-relaxed font-semibold mt-2">{imageUploadError}</p>
+                  <p className="text-[11px] text-rose-500 leading-relaxed font-extrabold mt-2">{imageUploadError}</p>
                 )}
               </div>
             )}

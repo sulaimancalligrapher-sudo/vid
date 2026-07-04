@@ -6,7 +6,7 @@ import StudentLogin from './components/StudentLogin';
 import LessonList from './components/LessonList';
 import LessonDetail from './components/LessonDetail';
 import SettingsPanel from './components/SettingsPanel';
-import { Settings, RefreshCw, BookOpen, Sparkles, Database } from 'lucide-react';
+import { Settings, RefreshCw, BookOpen, Sparkles, Database, Sun, Moon } from 'lucide-react';
 
 export default function App() {
   const [webAppUrl, setWebAppUrl] = useState(getWebAppUrl());
@@ -20,6 +20,20 @@ export default function App() {
   const [isReset, setIsReset] = useState(false);
   const [loadingLessons, setLoadingLessons] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    return localStorage.getItem('theme') === 'dark';
+  });
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [darkMode]);
 
   // Auto-login if cookies/localStorage exists
   useEffect(() => {
@@ -83,26 +97,35 @@ export default function App() {
   };
 
   return (
-    <div className="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-amber-500/20 selection:text-amber-300">
+    <div className="bg-gradient-to-br from-[#faf7f2] via-[#f5efe5] to-[#ebf3ed] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col font-sans selection:bg-amber-500/20 selection:text-amber-800 transition-colors duration-300">
       {/* Top Banner Header */}
-      <header className="bg-slate-950 border-b border-slate-800/80 sticky top-0 z-40 backdrop-blur-md bg-opacity-95 px-4 py-4 md:px-6">
+      <header className="bg-[#fefdfa]/90 dark:bg-slate-900/90 border-b border-amber-100/60 dark:border-slate-800 sticky top-0 z-40 backdrop-blur-md px-4 py-4 md:px-6 shadow-sm transition-colors duration-300">
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
           {/* Logo / Brand Name */}
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-tr from-amber-500 to-amber-600 rounded-xl flex items-center justify-center text-lg font-bold shadow-md shadow-amber-500/10">
+            <div className="w-10 h-10 bg-gradient-to-tr from-amber-400 via-orange-400 to-amber-500 rounded-2xl flex items-center justify-center text-xl font-bold shadow-md shadow-amber-200">
               📸
             </div>
             <div className="text-right">
-              <h1 className="text-sm font-bold text-slate-100 tracking-tight flex items-center gap-1.5">
+              <h1 className="text-sm font-bold text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-1.5">
                 <span>ملتقط الوسائط للطلاب</span>
-                <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
               </h1>
-              <p className="text-[10px] text-slate-500 font-medium">نظام القراءة والواجبات المطور</p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">نظام القراءة والواجبات المطور</p>
             </div>
           </div>
 
           {/* Quick Stats or Connection status */}
           <div className="flex items-center gap-2">
+            {/* Night Mode Toggle Button */}
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className="p-2.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-sky-100 dark:border-slate-700 text-amber-500 dark:text-amber-300 rounded-2xl cursor-pointer transition-all active:scale-95 shadow-sm"
+              title={darkMode ? "الوضع النهاري" : "الوضع الليلي"}
+            >
+              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+
             {isConfigured ? (
               <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full">
                 <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
@@ -119,7 +142,7 @@ export default function App() {
               <button
                 onClick={handleRefreshList}
                 disabled={loadingLessons}
-                className="p-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/40 text-slate-400 hover:text-white rounded-xl cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                className="p-2.5 bg-white dark:bg-slate-800 hover:bg-sky-50 dark:hover:bg-slate-700 border border-sky-100 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 rounded-2xl cursor-pointer transition-all active:scale-95 disabled:opacity-50 shadow-sm"
                 title="تحديث البيانات"
               >
                 <RefreshCw className={`w-4 h-4 ${loadingLessons ? 'animate-spin' : ''}`} />
@@ -128,7 +151,7 @@ export default function App() {
 
             <button
               onClick={() => setIsSettingsOpen(true)}
-              className="p-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/40 text-slate-400 hover:text-amber-400 rounded-xl cursor-pointer transition-all active:scale-95"
+              className="p-2.5 bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-slate-700 border border-sky-100 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-300 rounded-2xl cursor-pointer transition-all active:scale-95 shadow-sm"
               title="إعدادات قاعدة البيانات"
             >
               <Settings className="w-4 h-4" />
@@ -215,10 +238,10 @@ export default function App() {
       </main>
 
       {/* Footer Info */}
-      <footer className="bg-slate-950 border-t border-slate-900 py-6 text-center text-slate-600 text-xs select-none">
+      <footer className="bg-[#fefdfa]/90 dark:bg-slate-900/90 border-t border-amber-100/60 dark:border-slate-800 py-6 text-center text-slate-500 dark:text-slate-400 text-xs select-none shadow-inner transition-colors duration-300">
         <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p dir="rtl">تطبيق ويب تفاعلي متقدم لتعليم الأطفال القراءة 📚</p>
-          <p className="font-mono text-[10px]">© 2026 ملتقط الوسائط وقارئ الدروس</p>
+          <p dir="rtl" className="font-semibold text-slate-600 dark:text-slate-300">تطبيق ويب تفاعلي متقدم لتعليم الأطفال القراءة 📚</p>
+          <p className="font-mono text-[10px] text-slate-400 dark:text-slate-500">© 2026 ملتقط الوسائط وقارئ الدروس</p>
         </div>
       </footer>
 
