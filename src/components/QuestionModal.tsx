@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { HelpCircle, Check, AlertCircle, Send, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { HelpCircle, Check, AlertCircle, Send, CheckCircle2, ArrowLeft, RotateCcw } from 'lucide-react';
 import { Question } from '../types';
 
 interface QuestionModalProps {
@@ -8,6 +8,8 @@ interface QuestionModalProps {
   onClose: () => void;
   onSubmit: (answer: string, isCorrect: boolean | null) => void;
   showResult: 'نعم' | 'لا';
+  onRewatch?: () => void;
+  rewatchType?: 'video' | 'audio';
 }
 
 export default function QuestionModal({
@@ -15,6 +17,8 @@ export default function QuestionModal({
   onClose,
   onSubmit,
   showResult,
+  onRewatch,
+  rewatchType,
 }: QuestionModalProps) {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textAnswer, setTextAnswer] = useState('');
@@ -170,14 +174,29 @@ export default function QuestionModal({
 
         {/* Action button */}
         {!resultText && (
-          <button
-            onClick={handleSubmit}
-            disabled={!isButtonEnabled || isSubmitting}
-            className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold py-3.5 rounded-2xl shadow-lg shadow-amber-500/10 active:scale-98 transition-all flex items-center justify-center gap-2 text-xs cursor-pointer disabled:opacity-50"
-          >
-            <Send className="w-4 h-4" />
-            <span>إرسال الإجابة وتأكيد</span>
-          </button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            {onRewatch && (
+              <button
+                type="button"
+                onClick={onRewatch}
+                disabled={isSubmitting}
+                className="flex-1 bg-slate-850 hover:bg-slate-800 text-slate-200 border border-slate-750 hover:border-slate-700 font-bold py-3.5 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 text-[11px] cursor-pointer active:scale-98 disabled:opacity-50"
+              >
+                <RotateCcw className="w-4 h-4 text-amber-400 animate-spin-slow" />
+                <span>
+                  {rewatchType === 'audio' ? 'إعادة استماع المقطع السابق' : 'إعادة مشاهدة المقطع السابق'}
+                </span>
+              </button>
+            )}
+            <button
+              onClick={handleSubmit}
+              disabled={!isButtonEnabled || isSubmitting}
+              className="flex-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold py-3.5 rounded-2xl shadow-lg shadow-amber-500/10 active:scale-98 transition-all flex items-center justify-center gap-2 text-[11px] cursor-pointer disabled:opacity-50"
+            >
+              <Send className="w-4 h-4" />
+              <span>إرسال الإجابة وتأكيد</span>
+            </button>
+          </div>
         )}
       </motion.div>
     </div>

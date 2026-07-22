@@ -49,6 +49,43 @@ function groupArabicLetters(word: string): string[] {
   return parts;
 }
 
+// Extracted Google Drive File ID helper
+function getGoogleDriveFileId(url: string): string | null {
+  if (!url) return null;
+  // Match standard drive pattern /file/d/FILE_ID/
+  const fileDMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileDMatch && fileDMatch[1]) return fileDMatch[1];
+
+  // Match query parameter ?id=FILE_ID or &id=FILE_ID or /uc?id=FILE_ID
+  const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idMatch && idMatch[1]) return idMatch[1];
+
+  return null;
+}
+
+// Convert image url to drive thumbnail if it's a google drive file
+function getPlayableImageUrl(url: string): string {
+  if (!url) return '';
+  const driveId = getGoogleDriveFileId(url);
+  if (driveId) {
+    if (url.includes('drive.google.com/thumbnail')) {
+      return url;
+    }
+    return `https://drive.google.com/thumbnail?id=${driveId}&sz=w1200`;
+  }
+  return url;
+}
+
+// Convert audio/video url to a direct stream link if it's a google drive file
+function getPlayableMediaUrl(url: string): string {
+  if (!url) return '';
+  const driveId = getGoogleDriveFileId(url);
+  if (driveId) {
+    return `/api/proxy-drive?id=${driveId}`;
+  }
+  return url;
+}
+
 declare global {
   interface Window {
     YT: any;
@@ -91,12 +128,19 @@ export default function LessonDetail({
   const ytPlayerRef = useRef<any>(null);
   const ytTimerRef = useRef<number | null>(null);
   const [videoAnswered, setVideoAnswered] = useState<Set<string>>(new Set());
+  const [videoSeekError, setVideoSeekError] = useState('');
+  
+  const isYtVideo = !!(lesson.youtubeUrl && (lesson.youtubeUrl.includes('youtube.com') || lesson.youtubeUrl.includes('youtu.be')));
+  const html5VideoRef = useRef<HTMLVideoElement | null>(null);
+  const [html5Duration, setHtml5Duration] = useState(0);
+  const [html5Loading, setHtml5Loading] = useState(false);
   const videoAnsweredRef = useRef<Set<string>>(new Set());
   const [ytFullscreen, setYtFullscreen] = useState(false);
   const videoCardRef = useRef<HTMLDivElement | null>(null);
 
   // Explanation Audio State
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioLoading, setAudioLoading] = useState(false);
   const [audioProgress, setAudioProgress] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioTimeStr, setAudioTimeStr] = useState('00:00 / 00:00');
@@ -107,6 +151,7 @@ export default function LessonDetail({
 
   // Full Lesson Audio State
   const [fullAudioPlaying, setFullAudioPlaying] = useState(false);
+  const [fullAudioLoading, setFullAudioLoading] = useState(false);
   const [fullAudioProgress, setFullAudioProgress] = useState(0);
   const [fullAudioDuration, setFullAudioDuration] = useState(0);
   const [fullAudioTimeStr, setFullAudioTimeStr] = useState('00:00 / 00:00');
@@ -304,6 +349,7 @@ export default function LessonDetail({
       if (ytTimerRef.current) clearInterval(ytTimerRef.current);
       if (audioObjRef.current) audioObjRef.current.pause();
       if (fullAudioObjRef.current) fullAudioObjRef.current.pause();
+      if (html5VideoRef.current) html5VideoRef.current.pause();
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       window.removeEventListener('message', handleMessage);
@@ -328,6 +374,7 @@ export default function LessonDetail({
 
   // ------------------- YOUTUBE PLAYER CONFIG -------------------
   const initYtPlayer = () => {
+    if (!isYtVideo) return;
     try {
       const videoId = lesson.youtubeUrl.match(/(?:youtube\.com\/(?:.*v=|embed\/)|youtu\.be\/)([^?&"'>]+)/)?.[1];
       if (!videoId) return;
@@ -336,7 +383,7 @@ export default function LessonDetail({
         videoId: videoId,
         playerVars: {
           controls: 0,
-          rel: 0,
+ Rel: 0,
           showinfo: 0,
           disablekb: 1,
           modestbranding: 1,
@@ -368,30 +415,35 @@ export default function LessonDetail({
   // Re-initialize or handle YouTube Player dynamically on Tab Swapping or Mount
   useEffect(() => {
     if (activeTab === 'study' && lesson.youtubeUrl) {
-      if (!window.YT) {
-        const tag = document.createElement('script');
-        tag.src = 'https://www.youtube.com/iframe_api';
-        const firstScriptTag = document.getElementsByTagName('script')[0];
-        firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-      }
-
-      const checkAndInitYt = () => {
-        const container = document.getElementById('yt-player-frame');
-        if (container && window.YT && window.YT.Player) {
-          initYtPlayer();
-        } else if (activeTab === 'study') {
-          setTimeout(checkAndInitYt, 250);
+      if (isYtVideo) {
+        if (!window.YT) {
+          const tag = document.createElement('script');
+          tag.src = 'https://www.youtube.com/iframe_api';
+          const firstScriptTag = document.getElementsByTagName('script')[0];
+          firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
         }
-      };
 
-      // Slight delay to ensure DOM state is completely mounted and rendering tab panel
-      const timeoutId = setTimeout(checkAndInitYt, 150);
-      return () => clearTimeout(timeoutId);
+        const checkAndInitYt = () => {
+          const container = document.getElementById('yt-player-frame');
+          if (container && window.YT && window.YT.Player) {
+            initYtPlayer();
+          } else if (activeTab === 'study') {
+            setTimeout(checkAndInitYt, 250);
+          }
+        };
+
+        // Slight delay to ensure DOM state is completely mounted and rendering tab panel
+        const timeoutId = setTimeout(checkAndInitYt, 150);
+        return () => clearTimeout(timeoutId);
+      }
     } else {
       // Clean up when switching away from the study tab
       stopXyTimer();
       setYtReady(false);
       setYtPlaying(false);
+      if (html5VideoRef.current) {
+        html5VideoRef.current.pause();
+      }
     }
   }, [activeTab, lesson.youtubeUrl]);
 
@@ -435,30 +487,100 @@ export default function LessonDetail({
   };
 
   const handleYtPlay = () => {
-    if (ytPlayerRef.current && ytReady) {
-      ytPlayerRef.current.playVideo();
+    if (isYtVideo) {
+      if (ytPlayerRef.current && ytReady) {
+        ytPlayerRef.current.playVideo();
+      }
+    } else {
+      pauseExplanationAudio();
+      pauseFullAudio();
+      if (html5VideoRef.current) {
+        html5VideoRef.current.play().catch(() => {});
+        setYtPlaying(true);
+      }
     }
   };
 
   const handleYtPause = () => {
-    if (ytPlayerRef.current && ytReady) {
-      ytPlayerRef.current.pauseVideo();
+    if (isYtVideo) {
+      if (ytPlayerRef.current && ytReady) {
+        ytPlayerRef.current.pauseVideo();
+      }
+    } else {
+      if (html5VideoRef.current) {
+        html5VideoRef.current.pause();
+        setYtPlaying(false);
+      }
     }
   };
 
   const handleYtVolumeChange = (vol: number) => {
     setYtVolume(vol);
-    if (ytPlayerRef.current && ytReady) {
-      ytPlayerRef.current.setVolume(vol);
+    if (isYtVideo) {
+      if (ytPlayerRef.current && ytReady) {
+        ytPlayerRef.current.setVolume(vol);
+      }
+    } else {
+      if (html5VideoRef.current) {
+        html5VideoRef.current.volume = vol / 100;
+      }
     }
   };
 
   const handleYtSeekBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (ytPlayerRef.current && ytReady) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const pct = (e.clientX - rect.left) / rect.width;
-      const duration = ytPlayerRef.current.getDuration();
-      ytPlayerRef.current.seekTo(pct * duration, true);
+    // Check if seeking is allowed (lesson already completed, no questions, or all questions answered)
+    const isSeekingAllowed =
+      (lesson.completed === 'تم' && !isReset) ||
+      (lesson.questions.length === 0) ||
+      (lesson.questions.every(q => videoAnswered.has(q.question)));
+
+    if (!isSeekingAllowed) {
+      setVideoSeekError('تنبيه: لا يمكن تقديم أو تأخير الفيديو في المشاهدة الأولى. يجب مشاهدة الفيديو والإجابة على جميع الأسئلة أولاً ⛔.');
+      setTimeout(() => setVideoSeekError(''), 4500);
+      return;
+    }
+
+    if (isYtVideo) {
+      if (ytPlayerRef.current && ytReady) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const pct = (e.clientX - rect.left) / rect.width;
+        const duration = ytPlayerRef.current.getDuration();
+        ytPlayerRef.current.seekTo(pct * duration, true);
+      }
+    } else {
+      if (html5VideoRef.current && html5Duration) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const pct = (e.clientX - rect.left) / rect.width;
+        html5VideoRef.current.currentTime = pct * html5Duration;
+      }
+    }
+  };
+
+  const handleHtml5TimeUpdate = () => {
+    if (!html5VideoRef.current) return;
+    const curr = html5VideoRef.current.currentTime;
+    const dur = html5VideoRef.current.duration || 1;
+    setHtml5Duration(dur);
+    setYtProgress((curr / dur) * 100);
+
+    // Check for interactive questions
+    if (lesson.completed !== 'تم' || isReset) {
+      const question = lesson.questions.find(
+        q => Math.abs(q.time - curr) < 1 && !videoAnsweredRef.current.has(q.question)
+      );
+      if (question) {
+        html5VideoRef.current.pause();
+        setYtPlaying(false);
+        setCurrentQuestion(question);
+        setCurrentQuestionType('video');
+      }
+    }
+  };
+
+  const handleHtml5LoadedMetadata = () => {
+    if (html5VideoRef.current) {
+      html5VideoRef.current.volume = ytVolume / 100;
+      setHtml5Duration(html5VideoRef.current.duration || 0);
     }
   };
 
@@ -469,8 +591,16 @@ export default function LessonDetail({
     pauseFullAudio();
 
     if (!audioObjRef.current) {
-      audioObjRef.current = new Audio(lesson.explainSound);
+      audioObjRef.current = new Audio(getPlayableMediaUrl(lesson.explainSound));
       audioObjRef.current.volume = audioVolume / 100;
+
+      audioObjRef.current.addEventListener('loadstart', () => setAudioLoading(true));
+      audioObjRef.current.addEventListener('waiting', () => setAudioLoading(true));
+      audioObjRef.current.addEventListener('canplay', () => setAudioLoading(false));
+      audioObjRef.current.addEventListener('playing', () => setAudioLoading(false));
+      audioObjRef.current.addEventListener('seeking', () => setAudioLoading(true));
+      audioObjRef.current.addEventListener('seeked', () => setAudioLoading(false));
+      audioObjRef.current.addEventListener('error', () => setAudioLoading(false));
 
       audioObjRef.current.addEventListener('loadedmetadata', () => {
         setAudioDuration(audioObjRef.current?.duration || 0);
@@ -535,8 +665,16 @@ export default function LessonDetail({
     pauseExplanationAudio();
 
     if (!fullAudioObjRef.current) {
-      fullAudioObjRef.current = new Audio(lesson.fullSound);
+      fullAudioObjRef.current = new Audio(getPlayableMediaUrl(lesson.fullSound));
       fullAudioObjRef.current.volume = fullAudioVolume / 100;
+
+      fullAudioObjRef.current.addEventListener('loadstart', () => setFullAudioLoading(true));
+      fullAudioObjRef.current.addEventListener('waiting', () => setFullAudioLoading(true));
+      fullAudioObjRef.current.addEventListener('canplay', () => setFullAudioLoading(false));
+      fullAudioObjRef.current.addEventListener('playing', () => setFullAudioLoading(false));
+      fullAudioObjRef.current.addEventListener('seeking', () => setFullAudioLoading(true));
+      fullAudioObjRef.current.addEventListener('seeked', () => setFullAudioLoading(false));
+      fullAudioObjRef.current.addEventListener('error', () => setFullAudioLoading(false));
 
       fullAudioObjRef.current.addEventListener('loadedmetadata', () => {
         setFullAudioDuration(fullAudioObjRef.current?.duration || 0);
@@ -636,7 +774,7 @@ export default function LessonDetail({
       letterAudios[index]?.pause();
     }
 
-    const audio = new Audio(url);
+    const audio = new Audio(getPlayableMediaUrl(url));
     audio.volume = letterVolume / 100;
     setActiveLetterIdx(index);
     setLetterMsg('جاري تحميل صوت الحرف...');
@@ -688,6 +826,16 @@ export default function LessonDetail({
     letterAudios.forEach(audio => {
       if (audio) audio.volume = vol / 100;
     });
+  };
+
+  const getPreviousQuestionTime = (type: 'video' | 'audio', currentQ: Question): number => {
+    const questionsList = type === 'video' ? lesson.questions : lesson.audioQuestions;
+    const sorted = [...questionsList].sort((a, b) => a.time - b.time);
+    const currIdx = sorted.findIndex(q => q.question === currentQ.question);
+    if (currIdx <= 0) {
+      return 0;
+    }
+    return sorted[currIdx - 1].time;
   };
 
   // ------------------- OVERLAY QUESTIONS FEEDBACK -------------------
@@ -1262,10 +1410,10 @@ export default function LessonDetail({
                     <span>صورة توضيحية للدرس</span>
                   </h3>
                   <div
-                    onClick={() => setLightboxImg(lesson.image)}
+                    onClick={() => setLightboxImg(getPlayableImageUrl(lesson.image))}
                     className="relative aspect-video rounded-2xl overflow-hidden border border-sky-100 dark:border-slate-800 cursor-zoom-in group shadow-inner"
                   >
-                    <img src={lesson.image} className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-300" alt="Lesson Visual" />
+                    <img src={getPlayableImageUrl(lesson.image)} className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-300" alt="Lesson Visual" />
                     <div className="absolute inset-0 bg-slate-900/10 group-hover:bg-transparent transition-colors" />
                   </div>
                 </div>
@@ -1286,10 +1434,53 @@ export default function LessonDetail({
                   
                   {/* Aspect video player frame wrapper */}
                   <div className={`relative ${ytFullscreen ? 'flex-grow h-0 w-full mb-6' : 'aspect-video w-full mb-3.5'} rounded-2xl overflow-hidden border border-sky-100 dark:border-slate-800 bg-slate-950`}>
-                    <div id="yt-player-frame" className="w-full h-full" />
+                    {isYtVideo ? (
+                      <div id="yt-player-frame" className="w-full h-full" />
+                    ) : (
+                      <>
+                        <video
+                          ref={html5VideoRef}
+                          src={getPlayableMediaUrl(lesson.youtubeUrl)}
+                          className="w-full h-full object-contain"
+                          onTimeUpdate={handleHtml5TimeUpdate}
+                          onLoadedMetadata={handleHtml5LoadedMetadata}
+                          onLoadStart={() => setHtml5Loading(true)}
+                          onWaiting={() => setHtml5Loading(true)}
+                          onSeeking={() => setHtml5Loading(true)}
+                          onCanPlay={() => setHtml5Loading(false)}
+                          onPlaying={() => setHtml5Loading(false)}
+                          onSeeked={() => setHtml5Loading(false)}
+                          onError={() => setHtml5Loading(false)}
+                          playsInline
+                        />
+                        {html5Loading && (
+                          <div className="absolute inset-0 bg-slate-950/70 flex flex-col items-center justify-center gap-3 z-10 pointer-events-none">
+                            <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                            <span className="text-xs text-indigo-300 font-medium">جاري تحميل الفيديو...</span>
+                          </div>
+                        )}
+                      </>
+                    )}
                     {/* Transparent overlay blocks skipping on the YouTube iframe */}
-                    <div className="absolute inset-0 bg-transparent z-20 pointer-events-auto" />
+                    <div 
+                      onClick={ytPlaying ? handleYtPause : handleYtPlay}
+                      className="absolute inset-0 bg-transparent z-20 pointer-events-auto cursor-pointer" 
+                    />
                   </div>
+
+                  {/* Seekbar Warning Alert */}
+                  <AnimatePresence>
+                    {videoSeekError && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 5 }}
+                        className="mb-3 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-700 dark:text-amber-300 rounded-xl text-xs font-bold text-center leading-relaxed"
+                      >
+                        {videoSeekError}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   {/* Custom Controls */}
                   <div className="flex items-center justify-between gap-4 p-3 bg-indigo-50/70 dark:bg-slate-950 border border-indigo-100/50 dark:border-slate-800 rounded-2xl w-full shadow-inner">
@@ -1341,13 +1532,38 @@ export default function LessonDetail({
                         question={currentQuestion}
                         onClose={() => {
                           setCurrentQuestion(null);
-                          if (ytPlayerRef.current) {
-                            ytPlayerRef.current.playVideo();
+                          if (isYtVideo) {
+                            if (ytPlayerRef.current) {
+                              ytPlayerRef.current.playVideo();
+                            }
+                          } else {
+                            if (html5VideoRef.current) {
+                              html5VideoRef.current.play().catch(() => {});
+                              setYtPlaying(true);
+                            }
                           }
                           setCurrentQuestionType(null);
                         }}
                         onSubmit={handleQuestionSubmit}
                         showResult={lesson.showResult}
+                        rewatchType="video"
+                        onRewatch={() => {
+                          const prevTime = getPreviousQuestionTime('video', currentQuestion);
+                          if (isYtVideo) {
+                            if (ytPlayerRef.current && ytPlayerRef.current.seekTo) {
+                              ytPlayerRef.current.seekTo(prevTime, true);
+                              ytPlayerRef.current.playVideo();
+                            }
+                          } else {
+                            if (html5VideoRef.current) {
+                              html5VideoRef.current.currentTime = prevTime;
+                              html5VideoRef.current.play().catch(() => {});
+                              setYtPlaying(true);
+                            }
+                          }
+                          setCurrentQuestion(null);
+                          setCurrentQuestionType(null);
+                        }}
                       />
                     )}
                   </AnimatePresence>
@@ -1369,9 +1585,16 @@ export default function LessonDetail({
                   <div className="flex items-center justify-between gap-4 p-3 bg-indigo-50/70 dark:bg-slate-950 border border-indigo-100/50 dark:border-slate-800 rounded-2xl mb-3 shadow-inner">
                     <button
                       onClick={audioPlaying ? pauseExplanationAudio : playExplanationAudio}
-                      className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 active:scale-90 transition-all cursor-pointer shadow-md shadow-indigo-600/20"
+                      disabled={audioLoading}
+                      className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 active:scale-90 transition-all cursor-pointer shadow-md shadow-indigo-600/20 disabled:opacity-85"
                     >
-                      {audioPlaying ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white ml-0.5" />}
+                      {audioLoading ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : audioPlaying ? (
+                        <Pause className="w-4 h-4 fill-white" />
+                      ) : (
+                        <Play className="w-4 h-4 fill-white ml-0.5" />
+                      )}
                     </button>
 
                     <div
@@ -1416,9 +1639,16 @@ export default function LessonDetail({
                   <div className="flex flex-col items-center gap-3 bg-indigo-50/70 dark:bg-slate-950 border border-indigo-100/50 dark:border-slate-800 p-4 rounded-2xl shadow-inner">
                     <button
                       onClick={fullAudioPlaying ? pauseFullAudio : playFullAudio}
-                      className="w-14 h-14 bg-gradient-to-tr from-amber-400 to-amber-50 text-slate-950 hover:from-amber-500 hover:to-amber-600 rounded-full flex items-center justify-center cursor-pointer shadow-lg shadow-amber-400/20 active:scale-95 transition-all"
+                      disabled={fullAudioLoading}
+                      className="w-14 h-14 bg-gradient-to-tr from-amber-400 to-amber-50 text-slate-950 hover:from-amber-500 hover:to-amber-600 rounded-full flex items-center justify-center cursor-pointer shadow-lg shadow-amber-400/20 active:scale-95 transition-all disabled:opacity-85 animate-none"
                     >
-                      {fullAudioPlaying ? <Pause className="w-6 h-6 fill-slate-950" /> : <Play className="w-6 h-6 fill-slate-950 ml-1" />}
+                      {fullAudioLoading ? (
+                        <div className="w-6 h-6 border-4 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                      ) : fullAudioPlaying ? (
+                        <Pause className="w-6 h-6 fill-slate-950" />
+                      ) : (
+                        <Play className="w-6 h-6 fill-slate-950 ml-1" />
+                      )}
                     </button>
 
                     <span className="text-xs font-mono text-indigo-950 dark:text-indigo-200 select-none font-extrabold">{fullAudioTimeStr}</span>
@@ -1844,6 +2074,17 @@ export default function LessonDetail({
             }}
             onSubmit={handleQuestionSubmit}
             showResult={lesson.showResult}
+            rewatchType="audio"
+            onRewatch={() => {
+              const prevTime = getPreviousQuestionTime('audio', currentQuestion);
+              if (audioObjRef.current) {
+                audioObjRef.current.currentTime = prevTime;
+                audioObjRef.current.play();
+                setAudioPlaying(true);
+              }
+              setCurrentQuestion(null);
+              setCurrentQuestionType(null);
+            }}
           />
         )}
       </AnimatePresence>
