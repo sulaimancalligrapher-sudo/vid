@@ -91,8 +91,7 @@ export default function LessonList({
   };
 
   const isLessonVisibleByDate = (l: WordData): boolean => {
-    const hasDays = l.expireAfterDays !== undefined && l.expireAfterDays !== null && l.expireAfterDays !== '';
-    if (!l.startDate && !l.endDate && !hasDays) return true;
+    if (!l.startDate && !l.endDate) return true;
     const now = new Date();
 
     const startDate = parseFlexibleDate(l.startDate, false);
@@ -100,21 +99,9 @@ export default function LessonList({
       return false; // Lesson has not reached its start date yet
     }
 
-    // Check explicit endDate
     const endDate = parseFlexibleDate(l.endDate, true);
     if (endDate && now > endDate) {
-      return false; // Lesson has expired past its explicit end date
-    }
-
-    // Check expireAfterDays (number of days after startDate)
-    if (startDate && hasDays) {
-      const days = typeof l.expireAfterDays === 'number' ? l.expireAfterDays : parseFloat(String(l.expireAfterDays));
-      if (!isNaN(days) && days > 0) {
-        const calculatedExpiry = new Date(startDate.getTime() + days * 24 * 60 * 60 * 1000);
-        if (now > calculatedExpiry) {
-          return false; // Lesson expired based on days limit
-        }
-      }
+      return false; // Lesson has expired past its end date
     }
 
     return true;

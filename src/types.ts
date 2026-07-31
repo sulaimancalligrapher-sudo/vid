@@ -32,7 +32,6 @@ export interface WordData {
   totalQuestionsCount?: number;
   startDate?: string; // العمود DB (106) - تاريخ ظهور الموضوع
   endDate?: string; // العمود DC (107) - تاريخ إخفاء الموضوع
-  expireAfterDays?: number | string; // العمود DD (108) - عدد أيام إخفاء الدرس بعد تاريخ الظهور
 }
 
 export interface Student {
@@ -73,7 +72,6 @@ export interface AdminQuestionRow {
   defaultRetryResetCount?: number;
   startDate?: string; // العمود DB (106)
   endDate?: string; // العمود DC (107)
-  expireAfterDays?: number | string; // العمود DD (108)
   questions?: AdminQuestionItem[];
   audioQuestions?: AdminQuestionItem[];
 }

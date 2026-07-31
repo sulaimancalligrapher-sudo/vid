@@ -5,16 +5,10 @@ import {
   RefreshCw, CheckCircle2, AlertCircle, Video, Volume2, 
   Mic, Image as ImageIcon, ShieldCheck, Lock,
   Trash2, ChevronDown, ChevronUp, Link as LinkIcon, Settings as SettingsIcon,
-  HelpCircle, MessageSquare, Calendar, Clock, Eye, EyeOff,
-  UserCheck, Users, UserPlus, User, ChevronLeft, Edit3, Sparkles
+  HelpCircle, MessageSquare, Calendar, Clock, Eye, EyeOff
 } from 'lucide-react';
 import { AdminQuestionRow, AdminAnswerRow, AdminQuestionItem } from '../types';
-import { 
-  fetchAdminQuestions, saveAdminQuestion, deleteAdminQuestion, fetchAdminAnswers, 
-  updateAdminAnswer, saveBatchAdminQuestions,
-  getStudentCustomSchedulesMap, saveStudentCustomSchedule, deleteStudentCustomSchedule,
-  StudentCustomScheduleData, sanitizeQuestions, sanitizeLessonQuestions
-} from '../api';
+import { fetchAdminQuestions, saveAdminQuestion, deleteAdminQuestion, fetchAdminAnswers, updateAdminAnswer } from '../api';
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -28,321 +22,10 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [questionSearch, setQuestionSearch] = useState('');
   const [editingQuestion, setEditingQuestion] = useState<AdminQuestionRow | null>(null);
-  const [modalSubTab, setModalSubTab] = useState<'links' | 'schedule' | 'settings' | 'questions'>('links');
+  const [modalSubTab, setModalSubTab] = useState<'links' | 'settings' | 'questions'>('links');
   const [expandedVideoIndex, setExpandedVideoIndex] = useState<number | null>(0);
   const [expandedAudioIndex, setExpandedAudioIndex] = useState<number | null>(0);
   const [savingQuestion, setSavingQuestion] = useState(false);
-
-  // Auto Schedule Generator state
-  const [showAutoScheduleModal, setShowAutoScheduleModal] = useState(false);
-  const [confirmingClear, setConfirmingClear] = useState(false);
-  const [selectedDays, setSelectedDays] = useState<number[]>([1, 3, 5]); // Default Mon, Wed, Fri (1, 3, 5)
-  const [autoStartDate, setAutoStartDate] = useState<string>(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day} 08:00`;
-  });
-  const [lessonsPerDay, setLessonsPerDay] = useState<number>(2);
-  const [autoHideMode, setAutoHideMode] = useState<'days' | 'unifiedDate' | 'none'>('days');
-  const [autoExpireAfterDays, setAutoExpireAfterDays] = useState<number | string>(4);
-  const [autoUnifiedEndDate, setAutoUnifiedEndDate] = useState<string>('');
-  const [applyingAutoSchedule, setApplyingAutoSchedule] = useState(false);
-
-  // Student Custom Schedule Generator State
-  const [showStudentCustomScheduleModal, setShowStudentCustomScheduleModal] = useState(false);
-  const [selectedStudentForSchedule, setSelectedStudentForSchedule] = useState<string | null>(null);
-  const [studentScheduleSearch, setStudentScheduleSearch] = useState('');
-  const [manualStudentInput, setManualStudentInput] = useState('');
-  const [studentSelectedDays, setStudentSelectedDays] = useState<number[]>([1, 3, 5]);
-  const [studentStartDate, setStudentStartDate] = useState<string>(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day} 08:00`;
-  });
-  const [studentLessonsPerDay, setStudentLessonsPerDay] = useState<number>(2);
-  const [studentAutoHideMode, setStudentAutoHideMode] = useState<'days' | 'unifiedDate' | 'none'>('days');
-  const [studentAutoExpireAfterDays, setStudentAutoExpireAfterDays] = useState<number | string>(4);
-  const [studentAutoUnifiedEndDate, setStudentAutoUnifiedEndDate] = useState<string>('');
-  const [customSchedulesMap, setCustomSchedulesMap] = useState<Record<string, StudentCustomScheduleData>>(() => getStudentCustomSchedulesMap());
-
-  const refreshCustomSchedulesMap = () => {
-    setCustomSchedulesMap(getStudentCustomSchedulesMap());
-  };
-
-  const handleSelectStudentForSchedule = (username: string) => {
-    const cleanName = username.trim();
-    if (!cleanName) return;
-    setSelectedStudentForSchedule(cleanName);
-    const existing = customSchedulesMap[cleanName.toLowerCase()];
-    if (existing && existing.config) {
-      setStudentSelectedDays(existing.config.selectedDays || [1, 3, 5]);
-      setStudentStartDate(existing.config.startDate || autoStartDate);
-      setStudentLessonsPerDay(existing.config.lessonsPerDay || 2);
-      setStudentAutoHideMode(existing.config.autoHideMode || 'days');
-      setStudentAutoExpireAfterDays(existing.config.autoExpireAfterDays !== undefined ? existing.config.autoExpireAfterDays : 4);
-      setStudentAutoUnifiedEndDate(existing.config.autoUnifiedEndDate || '');
-    } else {
-      setStudentSelectedDays([1, 3, 5]);
-      setStudentStartDate(autoStartDate);
-      setStudentLessonsPerDay(2);
-      setStudentAutoHideMode('days');
-      setStudentAutoExpireAfterDays(4);
-      setStudentAutoUnifiedEndDate('');
-    }
-  };
-
-  const calculateStudentAutoSchedule = (): AdminQuestionRow[] => {
-    if (!questions || questions.length === 0) return [];
-    const activeDays = studentSelectedDays.length > 0 ? studentSelectedDays : [0, 1, 2, 3, 4, 5, 6];
-
-    let baseDate = new Date();
-    if (studentStartDate && studentStartDate.trim()) {
-      const parsed = new Date(studentStartDate.replace(' ', 'T'));
-      if (!isNaN(parsed.getTime())) {
-        baseDate = parsed;
-      }
-    }
-
-    let hh = String(baseDate.getHours()).padStart(2, '0');
-    let mm = String(baseDate.getMinutes()).padStart(2, '0');
-
-    let currentDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
-    while (!activeDays.includes(currentDate.getDay())) {
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    const perDay = Math.max(1, studentLessonsPerDay || 1);
-    const updatedList: AdminQuestionRow[] = [];
-
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
-
-      if (i > 0 && i % perDay === 0) {
-        currentDate.setDate(currentDate.getDate() + 1);
-        while (!activeDays.includes(currentDate.getDay())) {
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-      }
-
-      const y = currentDate.getFullYear();
-      const m = String(currentDate.getMonth() + 1).padStart(2, '0');
-      const d = String(currentDate.getDate()).padStart(2, '0');
-      const computedStart = `${y}-${m}-${d} ${hh}:${mm}`;
-
-      let computedExpireDays: number | string = '';
-      let computedEnd = '';
-
-      if (studentAutoHideMode === 'days') {
-        computedExpireDays = studentAutoExpireAfterDays !== '' ? studentAutoExpireAfterDays : '';
-        computedEnd = '';
-      } else if (studentAutoHideMode === 'unifiedDate') {
-        computedExpireDays = '';
-        computedEnd = studentAutoUnifiedEndDate;
-      } else {
-        computedExpireDays = '';
-        computedEnd = '';
-      }
-
-      updatedList.push({
-        ...q,
-        startDate: computedStart,
-        endDate: computedEnd,
-        expireAfterDays: computedExpireDays
-      });
-    }
-
-    return updatedList;
-  };
-
-  const handleSaveStudentCustomSchedule = () => {
-    if (!selectedStudentForSchedule) return;
-    if (studentSelectedDays.length === 0) {
-      alert('يرجى اختيار يوم واحد على الأقل من أيام الأسبوع.');
-      return;
-    }
-    const calculated = calculateStudentAutoSchedule();
-    const scheduleItems = calculated.map(q => ({
-      word: q.word,
-      comment: q.comment,
-      startDate: q.startDate || '',
-      endDate: q.endDate || '',
-      expireAfterDays: q.expireAfterDays !== undefined ? q.expireAfterDays : ''
-    }));
-
-    const data: StudentCustomScheduleData = {
-      username: selectedStudentForSchedule,
-      updatedAt: new Date().toISOString(),
-      config: {
-        selectedDays: studentSelectedDays,
-        startDate: studentStartDate,
-        lessonsPerDay: studentLessonsPerDay,
-        autoHideMode: studentAutoHideMode,
-        autoExpireAfterDays: studentAutoExpireAfterDays,
-        autoUnifiedEndDate: studentAutoUnifiedEndDate
-      },
-      schedule: scheduleItems
-    };
-
-    saveStudentCustomSchedule(selectedStudentForSchedule, data);
-    refreshCustomSchedulesMap();
-    setNotice({
-      text: `تم حفظ وتفعيل الجدول الخاص للطالب (${selectedStudentForSchedule}) لـ ${scheduleItems.length} درس بنجاح! ⚡`,
-      type: 'success'
-    });
-    setSelectedStudentForSchedule(null);
-  };
-
-  const handleDeleteStudentCustomSchedule = (username: string) => {
-    deleteStudentCustomSchedule(username);
-    refreshCustomSchedulesMap();
-    setNotice({
-      text: `تم إلغاء الجدول الخاص للطالب (${username}) وإعادته للجدول العام.`,
-      type: 'success'
-    });
-  };
-
-  // Days list for UI selection
-  const DAYS_LIST = [
-    { id: 0, name: 'الأحد', short: 'أحد' },
-    { id: 1, name: 'الإثنين', short: 'إثنين' },
-    { id: 2, name: 'الثلاثاء', short: 'ثلاثاء' },
-    { id: 3, name: 'الأربعاء', short: 'أربعاء' },
-    { id: 4, name: 'الخميس', short: 'خميس' },
-    { id: 5, name: 'الجمعة', short: 'جمعة' },
-    { id: 6, name: 'السبت', short: 'سبت' },
-  ];
-
-  // Calculation logic for Auto Schedule
-  const calculateAutoSchedule = (): AdminQuestionRow[] => {
-    if (!questions || questions.length === 0) return [];
-    const activeDays = selectedDays.length > 0 ? selectedDays : [0, 1, 2, 3, 4, 5, 6];
-
-    let baseDate = new Date();
-    if (autoStartDate && autoStartDate.trim()) {
-      const parsed = new Date(autoStartDate.replace(' ', 'T'));
-      if (!isNaN(parsed.getTime())) {
-        baseDate = parsed;
-      }
-    }
-
-    let hh = String(baseDate.getHours()).padStart(2, '0');
-    let mm = String(baseDate.getMinutes()).padStart(2, '0');
-
-    let currentDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
-    // Move currentDate to the first active day starting on or after baseDate
-    while (!activeDays.includes(currentDate.getDay())) {
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    const perDay = Math.max(1, lessonsPerDay || 1);
-    const updatedList: AdminQuestionRow[] = [];
-
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
-
-      if (i > 0 && i % perDay === 0) {
-        currentDate.setDate(currentDate.getDate() + 1);
-        while (!activeDays.includes(currentDate.getDay())) {
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-      }
-
-      const y = currentDate.getFullYear();
-      const m = String(currentDate.getMonth() + 1).padStart(2, '0');
-      const d = String(currentDate.getDate()).padStart(2, '0');
-      const computedStart = `${y}-${m}-${d} ${hh}:${mm}`;
-
-      let computedExpireDays: number | string = '';
-      let computedEnd = '';
-
-      if (autoHideMode === 'days') {
-        computedExpireDays = autoExpireAfterDays !== '' ? autoExpireAfterDays : '';
-        computedEnd = '';
-      } else if (autoHideMode === 'unifiedDate') {
-        computedExpireDays = '';
-        computedEnd = autoUnifiedEndDate;
-      } else {
-        computedExpireDays = '';
-        computedEnd = '';
-      }
-
-      const { cleanQuestions, cleanAudioQuestions } = sanitizeLessonQuestions(q.questions, q.audioQuestions);
-
-      updatedList.push({
-        ...q,
-        questions: cleanQuestions,
-        audioQuestions: cleanAudioQuestions,
-        startDate: computedStart,
-        endDate: computedEnd,
-        expireAfterDays: computedExpireDays
-      });
-    }
-
-    return updatedList;
-  };
-
-  // Handler to apply schedule to all lessons
-  const handleApplyAutoSchedule = async () => {
-    if (selectedDays.length === 0) {
-      setNotice({ text: 'يرجى اختيار يوم واحد على الأقل من أيام الأسبوع.', type: 'error' });
-      return;
-    }
-    const updatedList = calculateAutoSchedule();
-    if (updatedList.length === 0) {
-      setNotice({ text: 'لا توجد دروس حالياً لبرمجتها.', type: 'error' });
-      return;
-    }
-
-    setApplyingAutoSchedule(true);
-    try {
-      await saveBatchAdminQuestions(updatedList);
-      setQuestions(updatedList);
-      setNotice({
-        text: `تم تطبيق وحفظ جدول المواعيد التلقائي على جميع الدروس (${updatedList.length} درس) بنجاح! 🎉`,
-        type: 'success'
-      });
-      setShowAutoScheduleModal(false);
-      setConfirmingClear(false);
-    } catch (err: any) {
-      console.error(err);
-      setNotice({ text: 'خطأ أثناء تطبيق جدول المواعيد: ' + (err.message || ''), type: 'error' });
-    } finally {
-      setApplyingAutoSchedule(false);
-    }
-  };
-
-  // Handler to clear all schedules (dates DB:DD) for all lessons
-  const handleClearAllSchedules = async () => {
-    if (questions.length === 0) return;
-
-    const clearedList: AdminQuestionRow[] = questions.map(q => ({
-      ...q,
-      startDate: '',
-      endDate: '',
-      expireAfterDays: ''
-    }));
-
-    setApplyingAutoSchedule(true);
-    try {
-      await saveBatchAdminQuestions(clearedList);
-      setQuestions(clearedList);
-      setNotice({
-        text: `تم مسح وإزالة جميع مواعيد الدروس العامة (${clearedList.length} درس) بنجاح! 🗑️`,
-        type: 'success'
-      });
-      setShowAutoScheduleModal(false);
-      setConfirmingClear(false);
-    } catch (err: any) {
-      console.error(err);
-      setNotice({ text: 'خطأ أثناء مسح مواعيد الدروس: ' + (err.message || ''), type: 'error' });
-    } finally {
-      setApplyingAutoSchedule(false);
-    }
-  };
 
   // Answers state
   const [answers, setAnswers] = useState<AdminAnswerRow[]>([]);
@@ -511,7 +194,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
       defaultRetryResetCount: 1,
       startDate: '',
       endDate: '',
-      expireAfterDays: '',
       questions: [],
       audioQuestions: [],
     });
@@ -682,8 +364,8 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                   />
                 </div>
 
-                {/* Refresh, Auto Schedule, Custom Student Schedule, and Add button */}
-                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                {/* Refresh and Add button */}
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                   <button
                     onClick={loadQuestionsData}
                     disabled={loadingQuestions}
@@ -691,28 +373,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     title="تحديث القائمة"
                   >
                     <RefreshCw className={`w-4 h-4 ${loadingQuestions ? 'animate-spin' : ''}`} />
-                  </button>
-
-                  <button
-                    onClick={() => setShowAutoScheduleModal(true)}
-                    className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-indigo-600/20 cursor-pointer transition-all active:scale-98"
-                    title="برمجة تواريخ ظهور وإخفاء جميع الدروس تلقائياً لجميع الطلاب بحسب أيام الأسبوع"
-                  >
-                    <Calendar className="w-4 h-4" />
-                    <span>مولّد جدول الدروس التلقائي (عام)</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      refreshCustomSchedulesMap();
-                      setSelectedStudentForSchedule(null);
-                      setShowStudentCustomScheduleModal(true);
-                    }}
-                    className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-purple-600/20 cursor-pointer transition-all active:scale-98"
-                    title="تخصيص جدول دروس خاص بطالب معين دون التأثير على باقي الطلاب"
-                  >
-                    <UserCheck className="w-4 h-4 text-purple-200" />
-                    <span>مولّد جدول خاص لطالب ⚡</span>
                   </button>
 
                   <button
@@ -767,35 +427,19 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                               <div className="flex flex-col gap-1 text-[11px] font-mono">
                                 <span className="flex items-center gap-1.5 text-emerald-400">
                                   <Calendar className="w-3 h-3" />
-                                  <span>ظهور (DB): {q.startDate ? q.startDate : 'دائم'}</span>
+                                  <span>ظهور: {q.startDate ? q.startDate : 'دائم (غير محدد)'}</span>
                                 </span>
-                                {q.endDate ? (
-                                  <span className="flex items-center gap-1.5 text-rose-400">
-                                    <Clock className="w-3 h-3" />
-                                    <span>إخفاء (DC): {q.endDate}</span>
-                                  </span>
-                                ) : q.expireAfterDays ? (
-                                  <span className="flex items-center gap-1.5 text-amber-400">
-                                    <Clock className="w-3 h-3" />
-                                    <span>إخفاء (DD): بعد {q.expireAfterDays} أيام من الظهور</span>
-                                  </span>
-                                ) : (
-                                  <span className="flex items-center gap-1.5 text-slate-500">
-                                    <Clock className="w-3 h-3" />
-                                    <span>إخفاء: دائم</span>
-                                  </span>
-                                )}
+                                <span className="flex items-center gap-1.5 text-rose-400">
+                                  <Clock className="w-3 h-3" />
+                                  <span>إخفاء: {q.endDate ? q.endDate : 'دائم (غير محدد)'}</span>
+                                </span>
                               </div>
                             </td>
                             <td className="py-3.5 px-4 text-center">
                               <div className="flex items-center justify-center gap-2">
                                 <button
                                   onClick={() => {
-                                    setEditingQuestion({
-                                      ...q,
-                                      questions: sanitizeQuestions(q.questions),
-                                      audioQuestions: sanitizeQuestions(q.audioQuestions)
-                                    });
+                                    setEditingQuestion({ ...q });
                                     setModalSubTab('links');
                                   }}
                                   className="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500 hover:text-slate-950 text-amber-300 font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
@@ -954,12 +598,12 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                   </button>
                 </div>
 
-                {/* Sub-tabs for Modal (4 Sections) */}
+                {/* Sub-tabs for Modal (3 Sections) */}
                 <div className="flex items-center gap-1 bg-slate-950 p-1.5 rounded-2xl border border-slate-800 mb-4 shrink-0 overflow-x-auto">
                   <button
                     type="button"
                     onClick={() => setModalSubTab('links')}
-                    className={`flex-1 min-w-[110px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
                       modalSubTab === 'links'
                         ? 'bg-amber-500 text-slate-950 shadow-md'
                         : 'text-slate-400 hover:text-slate-200'
@@ -971,28 +615,15 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
 
                   <button
                     type="button"
-                    onClick={() => setModalSubTab('schedule')}
-                    className={`flex-1 min-w-[110px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                      modalSubTab === 'schedule'
-                        ? 'bg-amber-500 text-slate-950 shadow-md'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <Calendar className="w-3.5 h-3.5" />
-                    <span>2- مواعيد الدروس</span>
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={() => setModalSubTab('settings')}
-                    className={`flex-1 min-w-[110px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
                       modalSubTab === 'settings'
                         ? 'bg-amber-500 text-slate-950 shadow-md'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
                     <SettingsIcon className="w-3.5 h-3.5" />
-                    <span>3- إعدادات الدروس</span>
+                    <span>2- إعدادات الدروس</span>
                   </button>
 
                   <button
@@ -1005,7 +636,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     }`}
                   >
                     <HelpCircle className="w-3.5 h-3.5" />
-                    <span>4- أسئلة الفيديو والصوت</span>
+                    <span>3- أسئلة الفيديو والصوت</span>
                     <span className="px-1.5 py-0.2 bg-slate-900/40 text-[10px] rounded-full font-mono">
                       {(editingQuestion.questions?.length || 0) + (editingQuestion.audioQuestions?.length || 0)}
                     </span>
@@ -1103,118 +734,73 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     </div>
                   )}
 
-                  {/* SECTION 2: SCHEDULE */}
-                  {modalSubTab === 'schedule' && (
-                    <div className="space-y-4">
-                      <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-xl font-semibold text-xs flex items-center gap-2">
-                        <Calendar className="w-4 h-4 shrink-0 text-amber-400" />
-                        <span>قسم مواعيد الدروس: التحكم في تاريخ ظهور وإخفاء الدرس أو إخفائه التلقائي بعد عدد من الأيام</span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                        {/* Start Date DB */}
-                        <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-2">
-                          <label className="block text-slate-200 font-bold text-xs flex items-center justify-between">
-                            <span>تاريخ ظهور الدرس (العمود DB):</span>
-                            <span className="text-[10px] text-emerald-400 font-mono">Column 106</span>
-                          </label>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={editingQuestion.startDate || ''}
-                              onChange={(e) => setEditingQuestion({ ...editingQuestion, startDate: e.target.value })}
-                              placeholder="مثال: 2026-08-01 08:00"
-                              className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 outline-none focus:border-amber-500 font-mono text-xs"
-                            />
-                            <input
-                              type="datetime-local"
-                              onChange={(e) => {
-                                if (e.target.value) {
-                                  setEditingQuestion({ ...editingQuestion, startDate: e.target.value.replace('T', ' ') });
-                                }
-                              }}
-                              className="p-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-300 cursor-pointer text-xs shrink-0 hover:border-amber-500"
-                              title="اختر من التقويم"
-                            />
-                          </div>
-                          <p className="text-[11px] text-slate-400 leading-relaxed">
-                            تاريخ ووقت بدء ظهور الدرس للطلاب. إذا تُرِك فارغاً، يظهر الدرس فوراً بدون قيود زمنية.
-                          </p>
-                        </div>
-
-                        {/* End Date DC */}
-                        <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-2">
-                          <label className="block text-slate-200 font-bold text-xs flex items-center justify-between">
-                            <span>تاريخ إخفاء الدرس المباشر (العمود DC):</span>
-                            <span className="text-[10px] text-rose-400 font-mono">Column 107</span>
-                          </label>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={editingQuestion.endDate || ''}
-                              onChange={(e) => setEditingQuestion({ ...editingQuestion, endDate: e.target.value })}
-                              placeholder="مثال: 2026-08-10 23:59"
-                              className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 outline-none focus:border-amber-500 font-mono text-xs"
-                            />
-                            <input
-                              type="datetime-local"
-                              onChange={(e) => {
-                                if (e.target.value) {
-                                  setEditingQuestion({ ...editingQuestion, endDate: e.target.value.replace('T', ' ') });
-                                }
-                              }}
-                              className="p-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-300 cursor-pointer text-xs shrink-0 hover:border-amber-500"
-                              title="اختر من التقويم"
-                            />
-                          </div>
-                          <p className="text-[11px] text-slate-400 leading-relaxed">
-                            تاريخ ووقت محدد لإخفاء الدرس. يتم اعتماده إذا كان مدخلاً بشكل مباشر.
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Expire After Days DD */}
-                      <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl space-y-3">
-                        <div className="flex items-center justify-between">
-                          <label className="text-amber-300 font-extrabold text-xs flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-amber-400" />
-                            <span>إخفاء الدرس بالأيام بعد تاريخ الظهور (العمود DD):</span>
-                          </label>
-                          <span className="text-[10px] text-amber-400 font-mono font-bold">Column 108</span>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="number"
-                            min="1"
-                            placeholder="مثال: 4"
-                            value={editingQuestion.expireAfterDays !== undefined ? editingQuestion.expireAfterDays : ''}
-                            onChange={(e) => setEditingQuestion({ ...editingQuestion, expireAfterDays: e.target.value })}
-                            className="w-36 p-2.5 bg-slate-950 border border-amber-500/40 rounded-xl text-amber-300 font-mono font-bold text-center outline-none focus:border-amber-400 text-sm"
-                          />
-                          <span className="text-xs text-slate-200 font-bold">أيام (عدد أيام إخفاء الدرس بعد تاريخ الظهور)</span>
-                        </div>
-
-                        <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-[11px] text-slate-300 space-y-1">
-                          <p className="font-semibold text-amber-300">💡 كيف تعمل هذه الميزة؟</p>
-                          <p>
-                            عند وضع رقم (مثلاً <span className="text-amber-400 font-mono font-bold">4</span>) في العمود <span className="text-amber-400 font-mono">DD</span>، فسيختفي هذا الدرس تلقائياً عن الطلاب بعد <span className="text-amber-400 font-bold">4 أيام</span> من تاريخ ظهوره المسجل في العمود <span className="text-emerald-400 font-mono font-bold">DB</span>.
-                          </p>
-                          {editingQuestion.startDate && editingQuestion.expireAfterDays && !isNaN(parseFloat(String(editingQuestion.expireAfterDays))) && (
-                            <p className="text-emerald-400 font-mono mt-2 pt-1 border-t border-slate-800">
-                              ✓ النتيجة المحسوبة: سيظهر الدرس في <span className="font-bold">{editingQuestion.startDate}</span> ويختفي تلقائياً بعد <span className="font-bold">{editingQuestion.expireAfterDays}</span> أيام.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* SECTION 3: SETTINGS */}
+                  {/* SECTION 2: SETTINGS */}
                   {modalSubTab === 'settings' && (
                     <div className="space-y-3.5">
                       <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-xl font-semibold text-xs">
-                        قسم إعدادات الدروس: التحكم في عدد الأسئلة ومحددات الإجابات وتفضيلات الواجبات وتسجيل الصوت
+                        قسم إعدادات الدروس: التحكم في مواعيد ظهور وإخفاء الدرس، ومحددات الأسئلة وتفضيلات الواجبات
+                      </div>
+
+                      {/* قسم جدولة تاريخ الظهور والإخفاء */}
+                      <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl space-y-3">
+                        <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs">
+                          <Calendar className="w-4 h-4" />
+                          <span>جدولة ظهور وإخفاء الدرس (تاريخ الظهور وتاريخ الإخفاء)</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300">
+                          حدّد تاريخ ووقت بداية ظهور الدرس للطلبة (العمود DB) وتاريخ ووقت إخفائه التلقائي (العمود DC):
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-slate-200 font-bold mb-1">
+                              تاريخ ظهور الدرس (العمود DB):
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={editingQuestion.startDate || ''}
+                                onChange={(e) => setEditingQuestion({ ...editingQuestion, startDate: e.target.value })}
+                                placeholder="مثال: 2026-08-01 08:00"
+                                className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 outline-none focus:border-amber-500 font-mono text-xs"
+                              />
+                              <input
+                                type="datetime-local"
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    setEditingQuestion({ ...editingQuestion, startDate: e.target.value.replace('T', ' ') });
+                                  }
+                                }}
+                                className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-300 cursor-pointer text-xs shrink-0"
+                                title="اختر من التقويم"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-200 font-bold mb-1">
+                              تاريخ إخفاء الدرس (العمود DC):
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={editingQuestion.endDate || ''}
+                                onChange={(e) => setEditingQuestion({ ...editingQuestion, endDate: e.target.value })}
+                                placeholder="مثال: 2026-08-10 23:59"
+                                className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 outline-none focus:border-amber-500 font-mono text-xs"
+                              />
+                              <input
+                                type="datetime-local"
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    setEditingQuestion({ ...editingQuestion, endDate: e.target.value.replace('T', ' ') });
+                                  }
+                                }}
+                                className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-300 cursor-pointer text-xs shrink-0"
+                                title="اختر من التقويم"
+                              />
+                            </div>
+                          </div>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1323,24 +909,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                       <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl flex flex-wrap items-center justify-between gap-3">
                         <span className="font-bold text-xs text-slate-300">إضافة أسئلة تفاعلية للفيديو والصوت:</span>
 
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!editingQuestion) return;
-                              setEditingQuestion({
-                                ...editingQuestion,
-                                questions: sanitizeQuestions(editingQuestion.questions),
-                                audioQuestions: sanitizeQuestions(editingQuestion.audioQuestions)
-                              });
-                            }}
-                            className="px-3.5 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
-                            title="حذف أي أسئلة مكررة أو فارغة ناتجة عن التكرار"
-                          >
-                            <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>تنظيف وتصفية التكرارات</span>
-                          </button>
-
+                        <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={addVideoQuestion}
@@ -1836,931 +1405,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     <Trash2 className="w-4 h-4" />
                     <span>تأكيد الحذف النهائي</span>
                   </button>
-                </div>
-              </motion.div>
-            </div>
-          )}
-
-          {/* MODAL: AUTO SCHEDULE GENERATOR */}
-          {showAutoScheduleModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-md" dir="rtl">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
-              >
-                {/* Header */}
-                <div className="flex items-center justify-between pb-4 border-b border-slate-800 shrink-0">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400">
-                      <Calendar className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-base sm:text-lg text-slate-100 flex items-center gap-2">
-                        <span>مولّد جدول مواعيد الدروس التلقائي</span>
-                        <span className="px-2.5 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] rounded-full font-mono">
-                          {questions.length} درس
-                        </span>
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        برمجة وتنسيق تواريخ الظهور والإخفاء لجميع الدروس تلقائياً بناءً على أيام الأسبوع
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => setShowAutoScheduleModal(false)}
-                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl transition-all cursor-pointer"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                {/* Body Content - Scrollable */}
-                <div className="flex-grow overflow-y-auto py-5 space-y-6 custom-scrollbar pr-1">
-                  
-                  {/* 1. Days Selection */}
-                  <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label className="text-slate-200 font-extrabold text-xs flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-mono text-[11px]">1</span>
-                        <span>اختر أيام الدراسة في الأسبوع (أيام ظهور الدروس):</span>
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedDays([0, 1, 2, 3, 4, 5, 6])}
-                          className="text-[11px] text-indigo-400 hover:underline cursor-pointer"
-                        >
-                          تحديد الكل
-                        </button>
-                        <span className="text-slate-600 text-xs">|</span>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedDays([0, 1, 2, 3, 4])}
-                          className="text-[11px] text-indigo-400 hover:underline cursor-pointer"
-                        >
-                          أيام العمل (أحد-خميس)
-                        </button>
-                        <span className="text-slate-600 text-xs">|</span>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedDays([])}
-                          className="text-[11px] text-slate-500 hover:text-slate-300 cursor-pointer"
-                        >
-                          مسح
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-                      {DAYS_LIST.map((day) => {
-                        const isSelected = selectedDays.includes(day.id);
-                        return (
-                          <button
-                            key={day.id}
-                            type="button"
-                            onClick={() => {
-                              if (isSelected) {
-                                setSelectedDays(selectedDays.filter(id => id !== day.id));
-                              } else {
-                                setSelectedDays([...selectedDays, day.id].sort((a, b) => a - b));
-                              }
-                            }}
-                            className={`p-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                              isSelected
-                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 border border-indigo-400 ring-2 ring-indigo-500/30'
-                                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                            }`}
-                          >
-                            <span>{day.name}</span>
-                            {isSelected && <span className="w-1.5 h-1.5 bg-white rounded-full"></span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 2. Program Start Date & Lessons Per Day */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* First Day Start Date */}
-                    <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2">
-                      <label className="text-slate-200 font-extrabold text-xs flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-mono text-[11px]">2</span>
-                        <span>تاريخ بداية أول يوم في البرنامج (الظهور):</span>
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={autoStartDate}
-                          onChange={(e) => setAutoStartDate(e.target.value)}
-                          placeholder="مثال: 2026-08-03 08:00"
-                          className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-100 outline-none focus:border-indigo-500 font-mono text-xs"
-                        />
-                        <input
-                          type="datetime-local"
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              setAutoStartDate(e.target.value.replace('T', ' '));
-                            }
-                          }}
-                          className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-300 cursor-pointer text-xs shrink-0 hover:border-indigo-500"
-                          title="اختر من التقويم"
-                        />
-                      </div>
-                      <p className="text-[11px] text-slate-400">
-                        تاريخ أول يوم يبدأ فيه البرنامج. إذا لم يصادف يوماً من الأيام المحددة أعلاه، سيبدأ التوليد من أول يوم محدد يليه.
-                      </p>
-                    </div>
-
-                    {/* Lessons per day */}
-                    <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2">
-                      <label className="text-slate-200 font-extrabold text-xs flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-mono text-[11px]">3</span>
-                        <span>عدد الدروس التي تظهر في اليوم الواحد:</span>
-                      </label>
-                      <div className="flex items-center gap-3 pt-1">
-                        <input
-                          type="number"
-                          min="1"
-                          max="20"
-                          value={lessonsPerDay}
-                          onChange={(e) => setLessonsPerDay(Math.max(1, parseInt(e.target.value) || 1))}
-                          className="w-28 p-2.5 bg-slate-900 border border-indigo-500/30 rounded-xl text-indigo-300 font-mono font-extrabold text-center text-sm outline-none focus:border-indigo-500"
-                        />
-                        <span className="text-xs text-slate-300 font-bold">
-                          {lessonsPerDay === 1 ? 'درس واحد كل يوم محدد' : `${lessonsPerDay} دروس في نفس اليوم المحدد`}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400">
-                        مثال: اختيار 2 يعني إظهار درَسين اثنين في كل يوم دراسي محدد بنفس تاريخ الظهور.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* 3. Hide Options */}
-                  <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-3">
-                    <label className="text-slate-200 font-extrabold text-xs flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-mono text-[11px]">4</span>
-                      <span>طريقة إخفاء الدروس للطلاب:</span>
-                    </label>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-                      {/* Mode A: Expire after X Days */}
-                      <div
-                        onClick={() => setAutoHideMode('days')}
-                        className={`p-3.5 rounded-2xl border cursor-pointer transition-all space-y-2 ${
-                          autoHideMode === 'days'
-                            ? 'bg-amber-500/10 border-amber-500/50 ring-1 ring-amber-500/30'
-                            : 'bg-slate-900 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-extrabold text-xs text-amber-300 flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-amber-400" />
-                            <span>إخفاء حسب عدد الأيام (DD)</span>
-                          </span>
-                          <input
-                            type="radio"
-                            checked={autoHideMode === 'days'}
-                            onChange={() => setAutoHideMode('days')}
-                            className="accent-amber-500 cursor-pointer"
-                          />
-                        </div>
-                        <p className="text-[11px] text-slate-400">
-                          يختفي كل درس تلقائياً بعد مرور عدد معين من الأيام تحسب من بداية تاريخ ظهوره الخاص.
-                        </p>
-                        {autoHideMode === 'days' && (
-                          <div className="pt-2 border-t border-amber-500/20 flex items-center gap-2">
-                            <input
-                              type="number"
-                              min="1"
-                              placeholder="4"
-                              value={autoExpireAfterDays}
-                              onChange={(e) => setAutoExpireAfterDays(e.target.value)}
-                              className="w-20 p-2 bg-slate-950 border border-amber-500/40 rounded-xl text-amber-300 font-mono font-bold text-center text-xs outline-none"
-                            />
-                            <span className="text-[11px] text-amber-200 font-bold">أيام إخفاء بعد الظهور</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Mode B: Unified End Date */}
-                      <div
-                        onClick={() => setAutoHideMode('unifiedDate')}
-                        className={`p-3.5 rounded-2xl border cursor-pointer transition-all space-y-2 ${
-                          autoHideMode === 'unifiedDate'
-                            ? 'bg-rose-500/10 border-rose-500/50 ring-1 ring-rose-500/30'
-                            : 'bg-slate-900 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-extrabold text-xs text-rose-300 flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-rose-400" />
-                            <span>تاريخ إخفاء موحد (DC)</span>
-                          </span>
-                          <input
-                            type="radio"
-                            checked={autoHideMode === 'unifiedDate'}
-                            onChange={() => setAutoHideMode('unifiedDate')}
-                            className="accent-rose-500 cursor-pointer"
-                          />
-                        </div>
-                        <p className="text-[11px] text-slate-400">
-                          تحديد تاريخ وتوقيت نهائي موحد يختفي فيه جميع دروس البرنامج دفعة واحدة (انتهاء الكورس).
-                        </p>
-                        {autoHideMode === 'unifiedDate' && (
-                          <div className="pt-2 border-t border-rose-500/20 space-y-1">
-                            <input
-                              type="text"
-                              placeholder="2026-08-30 23:59"
-                              value={autoUnifiedEndDate}
-                              onChange={(e) => setAutoUnifiedEndDate(e.target.value)}
-                              className="w-full p-2 bg-slate-950 border border-rose-500/40 rounded-xl text-rose-300 font-mono text-xs outline-none"
-                            />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Mode C: Permanent */}
-                      <div
-                        onClick={() => setAutoHideMode('none')}
-                        className={`p-3.5 rounded-2xl border cursor-pointer transition-all space-y-2 ${
-                          autoHideMode === 'none'
-                            ? 'bg-emerald-500/10 border-emerald-500/50 ring-1 ring-emerald-500/30'
-                            : 'bg-slate-900 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-extrabold text-xs text-emerald-300 flex items-center gap-1.5">
-                            <Eye className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>دائم بدون إخفاء</span>
-                          </span>
-                          <input
-                            type="radio"
-                            checked={autoHideMode === 'none'}
-                            onChange={() => setAutoHideMode('none')}
-                            className="accent-emerald-500 cursor-pointer"
-                          />
-                        </div>
-                        <p className="text-[11px] text-slate-400">
-                          ستبقى جميع الدروس ظاهرة بشكل مستمر بدون تاريخ إخفاء بعد تاريخ ظهورها.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 4. Real-time Calculation Preview Table */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between px-1">
-                      <h4 className="font-extrabold text-xs text-slate-200 flex items-center gap-2">
-                        <span>معاينة الجدول المحسوب للدروس ({questions.length} درس):</span>
-                      </h4>
-                      <span className="text-[11px] text-indigo-400 font-semibold">
-                        يتم التحديث فوراً عند تغيير أي خيار
-                      </span>
-                    </div>
-
-                    <div className="border border-slate-800 rounded-2xl bg-slate-950 overflow-hidden shadow-inner max-h-60 overflow-y-auto custom-scrollbar">
-                      <table className="w-full text-right text-xs">
-                        <thead className="bg-slate-900 text-slate-400 font-bold sticky top-0 border-b border-slate-800">
-                          <tr>
-                            <th className="py-2.5 px-3 w-12 text-center">#</th>
-                            <th className="py-2.5 px-3">عنوان الدرس (الكلمة / المعرف)</th>
-                            <th className="py-2.5 px-3">اليوم المحسوب</th>
-                            <th className="py-2.5 px-3">تاريخ الظهور المحسوب (DB)</th>
-                            <th className="py-2.5 px-3">شرط الإخفاء (DC / DD)</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800/60 font-mono">
-                          {calculateAutoSchedule().map((q, idx) => {
-                            const dateObj = new Date(q.startDate ? q.startDate.replace(' ', 'T') : '');
-                            const DAY_NAMES = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-                            const dayName = !isNaN(dateObj.getTime()) ? DAY_NAMES[dateObj.getDay()] : '—';
-
-                            return (
-                              <tr key={idx} className="hover:bg-indigo-500/5 transition-colors">
-                                <td className="py-2 px-3 text-center text-slate-500 font-bold">{idx + 1}</td>
-                                <td className="py-2 px-3 text-slate-200 font-sans font-extrabold">
-                                  {q.word} <span className="text-slate-500 text-[10px] font-mono">({q.comment})</span>
-                                </td>
-                                <td className="py-2 px-3 text-indigo-400 font-bold font-sans">
-                                  {dayName}
-                                </td>
-                                <td className="py-2 px-3 text-emerald-400 font-bold">
-                                  {q.startDate}
-                                </td>
-                                <td className="py-2 px-3 text-amber-300">
-                                  {q.endDate ? (
-                                    <span className="text-rose-400">إخفاء موحد: {q.endDate}</span>
-                                  ) : q.expireAfterDays ? (
-                                    <span className="text-amber-400">إخفاء بعد {q.expireAfterDays} أيام</span>
-                                  ) : (
-                                    <span className="text-slate-500 font-sans">دائم</span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* Footer Action Buttons */}
-                <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowAutoScheduleModal(false);
-                        setConfirmingClear(false);
-                      }}
-                      className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs cursor-pointer"
-                    >
-                      إلغاء
-                    </button>
-
-                    {confirmingClear ? (
-                      <div className="flex items-center gap-2 p-1 bg-rose-500/15 border border-rose-500/40 rounded-xl">
-                        <span className="text-[11px] text-rose-200 font-extrabold px-1">
-                          تأكيد مسح كافة المواعيد العامة؟
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleClearAllSchedules}
-                          disabled={applyingAutoSchedule}
-                          className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs rounded-lg shadow cursor-pointer transition-all active:scale-95 flex items-center gap-1"
-                        >
-                          {applyingAutoSchedule ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                          <span>نعم، مسح الآن</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmingClear(false)}
-                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-lg cursor-pointer"
-                        >
-                          إلغاء
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmingClear(true)}
-                        disabled={applyingAutoSchedule || questions.length === 0}
-                        className="px-4 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
-                        title="مسح وإصدار أمر مسح لجميع التواريخ (DB:DD) في كل الدروس العامة"
-                      >
-                        <Trash2 className="w-4 h-4 text-rose-400" />
-                        <span>مسح وإزالة جميع المواعيد العامة</span>
-                      </button>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleApplyAutoSchedule}
-                    disabled={applyingAutoSchedule || selectedDays.length === 0}
-                    className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-extrabold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-indigo-600/25 cursor-pointer disabled:opacity-50 transition-all active:scale-98"
-                  >
-                    {applyingAutoSchedule ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Save className="w-4 h-4" />
-                    )}
-                    <span>تطبيق وحفظ الجدول التلقائي على جميع الدروس ({questions.length} درس)</span>
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          )}
-
-          {/* MODAL: STUDENT CUSTOM SCHEDULE GENERATOR */}
-          {showStudentCustomScheduleModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-md" dir="rtl">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="w-full max-w-4xl bg-slate-900 border border-purple-500/30 rounded-3xl p-5 sm:p-7 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
-              >
-                {/* Header */}
-                <div className="flex items-center justify-between pb-4 border-b border-slate-800 shrink-0">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-2xl text-purple-400">
-                      <UserCheck className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-base sm:text-lg text-slate-100 flex items-center gap-2">
-                        <span>مولّد جدول خاص لطالب ⚡</span>
-                        {selectedStudentForSchedule && (
-                          <span className="px-3 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs rounded-full font-bold">
-                            الطالب: {selectedStudentForSchedule}
-                          </span>
-                        )}
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {selectedStudentForSchedule 
-                          ? `ضبط الأيام والمواعيد الخاصة للطالب (${selectedStudentForSchedule}) دون التأثير على الجدول العام للطلاب الأخرين.`
-                          : 'اختر أو أدخل اسم الطالب لضبط جدول مواعيد مخصص له.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setShowStudentCustomScheduleModal(false);
-                      setSelectedStudentForSchedule(null);
-                    }}
-                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl transition-all cursor-pointer"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                {/* Body Content */}
-                <div className="flex-grow overflow-y-auto py-5 space-y-6 custom-scrollbar pr-1">
-                  
-                  {/* STEP 1: SELECT STUDENT IF NOT YET SELECTED */}
-                  {!selectedStudentForSchedule ? (
-                    <div className="space-y-5">
-                      {/* Search or Add Student */}
-                      <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-4">
-                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                          <label className="text-slate-200 font-extrabold text-xs flex items-center gap-2">
-                            <Users className="w-4 h-4 text-purple-400" />
-                            <span>اختر طالباً من القائمة أو أدخل اسماً جديداً:</span>
-                          </label>
-                          <div className="relative w-full sm:w-64">
-                            <Search className="w-4 h-4 absolute right-3 top-2.5 text-slate-500" />
-                            <input
-                              type="text"
-                              value={studentScheduleSearch}
-                              onChange={(e) => setStudentScheduleSearch(e.target.value)}
-                              placeholder="بحث باسم الطالب..."
-                              className="w-full pr-9 pl-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 outline-none focus:border-purple-500"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Manual add input */}
-                        <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={manualStudentInput}
-                            onChange={(e) => setManualStudentInput(e.target.value)}
-                            placeholder="أدخل اسم طالب جديد (مثال: أحمد علي)..."
-                            className="flex-grow p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 outline-none focus:border-purple-500"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && manualStudentInput.trim()) {
-                                handleSelectStudentForSchedule(manualStudentInput);
-                                setManualStudentInput('');
-                              }
-                            }}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (manualStudentInput.trim()) {
-                                handleSelectStudentForSchedule(manualStudentInput);
-                                setManualStudentInput('');
-                              } else {
-                                alert('يرجى كتابة اسم الطالب أولاً.');
-                              }
-                            }}
-                            className="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shrink-0 cursor-pointer shadow-md shadow-purple-600/20 transition-all active:scale-95"
-                          >
-                            <UserPlus className="w-4 h-4" />
-                            <span>تخصيص جدول</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Students List Grid */}
-                      <div className="space-y-2">
-                        <h4 className="text-xs font-bold text-slate-300 flex items-center justify-between">
-                          <span>قائمة الطلاب المسجلين بالمنظومة:</span>
-                          <span className="text-slate-500 font-mono text-[11px]">
-                            إجمالي: {Array.from(new Set([...answers.map(a => a.username?.trim()).filter(Boolean), ...Object.keys(customSchedulesMap)])).length} طالب
-                          </span>
-                        </h4>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto custom-scrollbar p-1">
-                          {(() => {
-                            const setNames = new Set<string>();
-                            answers.forEach(a => { if (a.username?.trim()) setNames.add(a.username.trim()); });
-                            Object.keys(customSchedulesMap).forEach(k => {
-                              if (customSchedulesMap[k]?.username) setNames.add(customSchedulesMap[k].username);
-                            });
-                            const allNames = Array.from(setNames).filter(n => 
-                              !studentScheduleSearch.trim() || n.toLowerCase().includes(studentScheduleSearch.trim().toLowerCase())
-                            );
-
-                            if (allNames.length === 0) {
-                              return (
-                                <div className="col-span-2 p-8 text-center bg-slate-950 border border-slate-800 rounded-2xl text-slate-500 text-xs">
-                                  لا يوجد طلاب مطابقون للبحث. يمكنك كتابة اسم الطالب في الخانة أعلاه والضغط على "تخصيص جدول".
-                                </div>
-                              );
-                            }
-
-                            return allNames.map((uname) => {
-                              const key = uname.toLowerCase();
-                              const existingSchedule = customSchedulesMap[key];
-                              const hasCustom = !!(existingSchedule && existingSchedule.schedule && existingSchedule.schedule.length > 0);
-
-                              return (
-                                <div
-                                  key={uname}
-                                  className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
-                                    hasCustom
-                                      ? 'bg-purple-950/20 border-purple-500/40 ring-1 ring-purple-500/20'
-                                      : 'bg-slate-950 border-slate-800 hover:border-slate-700'
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-2.5 overflow-hidden">
-                                    <div className={`p-2 rounded-xl shrink-0 ${hasCustom ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-800 text-slate-400'}`}>
-                                      <User className="w-4 h-4" />
-                                    </div>
-                                    <div className="truncate">
-                                      <div className="font-extrabold text-xs text-slate-200 truncate">{uname}</div>
-                                      <div className="mt-1">
-                                        {hasCustom ? (
-                                          <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] rounded-full font-bold inline-flex items-center gap-1">
-                                            <span>⚡ جدول خاص مفعل ({existingSchedule.schedule.length} درس)</span>
-                                          </span>
-                                        ) : (
-                                          <span className="px-2 py-0.5 bg-slate-800 text-slate-400 border border-slate-700 text-[10px] rounded-full">
-                                            جدول عام (افتراضي)
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSelectStudentForSchedule(uname)}
-                                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center gap-1 shadow-md shadow-purple-600/20 transition-all cursor-pointer"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                      <span>{hasCustom ? 'تعديل' : 'تخصيص'}</span>
-                                    </button>
-
-                                    {hasCustom && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteStudentCustomSchedule(uname)}
-                                        className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl transition-all cursor-pointer"
-                                        title="إلغاء الجدول الخاص وإعادته للجدول العام"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            });
-                          })()}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    /* STEP 2: CUSTOM SCHEDULE GENERATOR FOR SELECTED STUDENT */
-                    <div className="space-y-6">
-                      {/* Back button header */}
-                      <div className="flex items-center justify-between pb-2">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedStudentForSchedule(null)}
-                          className="text-xs text-purple-400 hover:text-purple-300 font-bold flex items-center gap-1 cursor-pointer"
-                        >
-                          <ChevronLeft className="w-4 h-4 rotate-180" />
-                          <span>العودة لقائمة الطلاب</span>
-                        </button>
-                        
-                        <div className="text-xs text-slate-400">
-                          جاري الضبط للطالب: <strong className="text-purple-300 font-mono">{selectedStudentForSchedule}</strong>
-                        </div>
-                      </div>
-
-                      {/* 1. Student Days Selection */}
-                      <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <label className="text-slate-200 font-extrabold text-xs flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center font-mono text-[11px]">1</span>
-                            <span>اختر أيام الدراسة الخاصة بهذا الطالب:</span>
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setStudentSelectedDays([0, 1, 2, 3, 4, 5, 6])}
-                              className="text-[11px] text-purple-400 hover:underline cursor-pointer"
-                            >
-                              تحديد الكل
-                            </button>
-                            <span className="text-slate-600 text-xs">|</span>
-                            <button
-                              type="button"
-                              onClick={() => setStudentSelectedDays([0, 1, 2, 3, 4])}
-                              className="text-[11px] text-purple-400 hover:underline cursor-pointer"
-                            >
-                              أيام العمل
-                            </button>
-                            <span className="text-slate-600 text-xs">|</span>
-                            <button
-                              type="button"
-                              onClick={() => setStudentSelectedDays([])}
-                              className="text-[11px] text-slate-500 hover:text-slate-300 cursor-pointer"
-                            >
-                              مسح
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-                          {DAYS_LIST.map((day) => {
-                            const isSelected = studentSelectedDays.includes(day.id);
-                            return (
-                              <button
-                                key={day.id}
-                                type="button"
-                                onClick={() => {
-                                  if (isSelected) {
-                                    setStudentSelectedDays(studentSelectedDays.filter(id => id !== day.id));
-                                  } else {
-                                    setStudentSelectedDays([...studentSelectedDays, day.id].sort((a, b) => a - b));
-                                  }
-                                }}
-                                className={`p-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                                  isSelected
-                                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/25 border border-purple-400 ring-2 ring-purple-500/30'
-                                    : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                                }`}
-                              >
-                                <span>{day.name}</span>
-                                {isSelected && <span className="w-1.5 h-1.5 bg-white rounded-full"></span>}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* 2. Program Start Date & Lessons Per Day */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {/* Student Start Date */}
-                        <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2">
-                          <label className="text-slate-200 font-extrabold text-xs flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center font-mono text-[11px]">2</span>
-                            <span>تاريخ بداية أول يوم لهذا الطالب:</span>
-                          </label>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={studentStartDate}
-                              onChange={(e) => setStudentStartDate(e.target.value)}
-                              placeholder="مثال: 2026-08-03 08:00"
-                              className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-100 outline-none focus:border-purple-500 font-mono text-xs"
-                            />
-                            <input
-                              type="datetime-local"
-                              onChange={(e) => {
-                                if (e.target.value) {
-                                  setStudentStartDate(e.target.value.replace('T', ' '));
-                                }
-                              }}
-                              className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-300 cursor-pointer text-xs shrink-0 hover:border-purple-500"
-                              title="اختر من التقويم"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Lessons per day for student */}
-                        <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2">
-                          <label className="text-slate-200 font-extrabold text-xs flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center font-mono text-[11px]">3</span>
-                            <span>عدد الدروس اليومية لهذا الطالب:</span>
-                          </label>
-                          <div className="flex items-center gap-3 pt-1">
-                            <input
-                              type="number"
-                              min="1"
-                              max="20"
-                              value={studentLessonsPerDay}
-                              onChange={(e) => setStudentLessonsPerDay(Math.max(1, parseInt(e.target.value) || 1))}
-                              className="w-28 p-2.5 bg-slate-900 border border-purple-500/30 rounded-xl text-purple-300 font-mono font-extrabold text-center text-sm outline-none focus:border-purple-500"
-                            />
-                            <span className="text-xs text-slate-300 font-bold">
-                              {studentLessonsPerDay === 1 ? 'درس واحد في كل يوم محدد' : `${studentLessonsPerDay} دروس في نفس اليوم المحدد`}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 3. Hide Options for Student */}
-                      <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-3">
-                        <label className="text-slate-200 font-extrabold text-xs flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center font-mono text-[11px]">4</span>
-                          <span>طريقة إخفاء الدروس لهذا الطالب:</span>
-                        </label>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-                          {/* Mode A: Expire after X Days */}
-                          <div
-                            onClick={() => setStudentAutoHideMode('days')}
-                            className={`p-3.5 rounded-2xl border cursor-pointer transition-all space-y-2 ${
-                              studentAutoHideMode === 'days'
-                                ? 'bg-amber-500/10 border-amber-500/50 ring-1 ring-amber-500/30'
-                                : 'bg-slate-900 border-slate-800 hover:border-slate-700'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-extrabold text-xs text-amber-300 flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5 text-amber-400" />
-                                <span>إخفاء حسب عدد الأيام (DD)</span>
-                              </span>
-                              <input
-                                type="radio"
-                                checked={studentAutoHideMode === 'days'}
-                                onChange={() => setStudentAutoHideMode('days')}
-                                className="accent-amber-500 cursor-pointer"
-                              />
-                            </div>
-                            <p className="text-[11px] text-slate-400">
-                              يختفي كل درس لهذا الطالب تلقائياً بعد مرور عدد معين من الأيام تحسب من بداية ظهور كل درس.
-                            </p>
-                            {studentAutoHideMode === 'days' && (
-                              <div className="pt-2 border-t border-amber-500/20 flex items-center gap-2">
-                                <input
-                                  type="number"
-                                  min="1"
-                                  placeholder="4"
-                                  value={studentAutoExpireAfterDays}
-                                  onChange={(e) => setStudentAutoExpireAfterDays(e.target.value)}
-                                  className="w-20 p-2 bg-slate-950 border border-amber-500/40 rounded-xl text-amber-300 font-mono font-bold text-center text-xs outline-none"
-                                />
-                                <span className="text-[11px] text-amber-200 font-bold">أيام إخفاء بعد الظهور</span>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Mode B: Unified End Date */}
-                          <div
-                            onClick={() => setStudentAutoHideMode('unifiedDate')}
-                            className={`p-3.5 rounded-2xl border cursor-pointer transition-all space-y-2 ${
-                              studentAutoHideMode === 'unifiedDate'
-                                ? 'bg-rose-500/10 border-rose-500/50 ring-1 ring-rose-500/30'
-                                : 'bg-slate-900 border-slate-800 hover:border-slate-700'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-extrabold text-xs text-rose-300 flex items-center gap-1.5">
-                                <Calendar className="w-3.5 h-3.5 text-rose-400" />
-                                <span>تاريخ إخفاء موحد (DC)</span>
-                              </span>
-                              <input
-                                type="radio"
-                                checked={studentAutoHideMode === 'unifiedDate'}
-                                onChange={() => setStudentAutoHideMode('unifiedDate')}
-                                className="accent-rose-500 cursor-pointer"
-                              />
-                            </div>
-                            <p className="text-[11px] text-slate-400">
-                              تاريخ وتوقيت موحد يختفي فيه جميع الدروس لهذا الطالب.
-                            </p>
-                            {studentAutoHideMode === 'unifiedDate' && (
-                              <div className="pt-2 border-t border-rose-500/20 space-y-1">
-                                <input
-                                  type="text"
-                                  placeholder="2026-08-30 23:59"
-                                  value={studentAutoUnifiedEndDate}
-                                  onChange={(e) => setStudentAutoUnifiedEndDate(e.target.value)}
-                                  className="w-full p-2 bg-slate-950 border border-rose-500/40 rounded-xl text-rose-300 font-mono text-xs outline-none"
-                                />
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Mode C: Permanent */}
-                          <div
-                            onClick={() => setStudentAutoHideMode('none')}
-                            className={`p-3.5 rounded-2xl border cursor-pointer transition-all space-y-2 ${
-                              studentAutoHideMode === 'none'
-                                ? 'bg-emerald-500/10 border-emerald-500/50 ring-1 ring-emerald-500/30'
-                                : 'bg-slate-900 border-slate-800 hover:border-slate-700'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-extrabold text-xs text-emerald-300 flex items-center gap-1.5">
-                                <Eye className="w-3.5 h-3.5 text-emerald-400" />
-                                <span>دائم بدون إخفاء</span>
-                              </span>
-                              <input
-                                type="radio"
-                                checked={studentAutoHideMode === 'none'}
-                                onChange={() => setStudentAutoHideMode('none')}
-                                className="accent-emerald-500 cursor-pointer"
-                              />
-                            </div>
-                            <p className="text-[11px] text-slate-400">
-                              تبقى جميع دروس هذا الطالب ظاهرة باستمرار.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 4. Real-time Preview Table for Student */}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between px-1">
-                          <h4 className="font-extrabold text-xs text-slate-200 flex items-center gap-2">
-                            <span>معاينة الجدول المحسوب للطالب ({selectedStudentForSchedule}):</span>
-                          </h4>
-                          <span className="text-[11px] text-purple-400 font-semibold">
-                            محدث تلقائياً بحسب الخيارات أعلاه
-                          </span>
-                        </div>
-
-                        <div className="border border-slate-800 rounded-2xl bg-slate-950 overflow-hidden shadow-inner max-h-56 overflow-y-auto custom-scrollbar">
-                          <table className="w-full text-right text-xs">
-                            <thead className="bg-slate-900 text-slate-400 font-bold sticky top-0 border-b border-slate-800">
-                              <tr>
-                                <th className="py-2.5 px-3 w-12 text-center">#</th>
-                                <th className="py-2.5 px-3">عنوان الدرس</th>
-                                <th className="py-2.5 px-3">اليوم المحسوب</th>
-                                <th className="py-2.5 px-3">تاريخ الظهور (DB)</th>
-                                <th className="py-2.5 px-3">شرط الإخفاء (DC / DD)</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-800/60 font-mono">
-                              {calculateStudentAutoSchedule().map((q, idx) => {
-                                const dateObj = new Date(q.startDate ? q.startDate.replace(' ', 'T') : '');
-                                const DAY_NAMES = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-                                const dayName = !isNaN(dateObj.getTime()) ? DAY_NAMES[dateObj.getDay()] : '—';
-
-                                return (
-                                  <tr key={idx} className="hover:bg-purple-500/5 transition-colors">
-                                    <td className="py-2 px-3 text-center text-slate-500 font-bold">{idx + 1}</td>
-                                    <td className="py-2 px-3 text-slate-200 font-sans font-extrabold">
-                                      {q.word} <span className="text-slate-500 text-[10px] font-mono">({q.comment})</span>
-                                    </td>
-                                    <td className="py-2 px-3 text-purple-300 font-bold font-sans">
-                                      {dayName}
-                                    </td>
-                                    <td className="py-2 px-3 text-emerald-400 font-bold">
-                                      {q.startDate}
-                                    </td>
-                                    <td className="py-2 px-3 text-amber-300">
-                                      {q.endDate ? (
-                                        <span className="text-rose-400">إخفاء موحد: {q.endDate}</span>
-                                      ) : q.expireAfterDays ? (
-                                        <span className="text-amber-400">إخفاء بعد {q.expireAfterDays} أيام</span>
-                                      ) : (
-                                        <span className="text-slate-500 font-sans">دائم</span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                </div>
-
-                {/* Footer Action Buttons */}
-                <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (selectedStudentForSchedule) {
-                        setSelectedStudentForSchedule(null);
-                      } else {
-                        setShowStudentCustomScheduleModal(false);
-                      }
-                    }}
-                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs cursor-pointer"
-                  >
-                    {selectedStudentForSchedule ? 'العودة لقائمة الطلاب' : 'إغلاق'}
-                  </button>
-
-                  {selectedStudentForSchedule && (
-                    <button
-                      type="button"
-                      onClick={handleSaveStudentCustomSchedule}
-                      disabled={studentSelectedDays.length === 0}
-                      className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-purple-600/25 cursor-pointer disabled:opacity-50 transition-all active:scale-98"
-                    >
-                      <Save className="w-4 h-4" />
-                      <span>حفظ وتفعيل الجدول الخاص للطالب ({selectedStudentForSchedule})</span>
-                    </button>
-                  )}
                 </div>
               </motion.div>
             </div>

@@ -489,7 +489,6 @@ function getWords(sheetName, username) {
       var defaultRetryResetCount = row[104] ? (parseInt(row[104].toString().trim()) || 0) : 0; // DA (105)
       var startDate = row[105] ? (row[105] instanceof Date ? Utilities.formatDate(row[105], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[105].toString().trim()) : ''; // DB (106)
       var endDate = row[106] ? (row[106] instanceof Date ? Utilities.formatDate(row[106], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[106].toString().trim()) : ''; // DC (107)
-      var expireAfterDays = row[107] ? (parseInt(row[107].toString().trim()) || '') : ''; // DD (108)
 
       // قراءة حالة إكمال الدرس وعدد الإعادات المتبقية للطالب المنسوب من ورقة Answers (العمود AO / Column 41 / index 40 و العمود AP / Column 42 / index 41)
       var completed = '';
@@ -598,8 +597,7 @@ function getWords(sheetName, username) {
         retryResetCount: retryResetCount,
         totalQuestionsCount: totalQuestionsCount,
         startDate: startDate,
-        endDate: endDate,
-        expireAfterDays: expireAfterDays
+        endDate: endDate
       });
     }
   }
@@ -1166,8 +1164,7 @@ function getAdminQuestions() {
         allowUpload: row[102] ? row[102].toString().trim() : '',
         defaultRetryResetCount: row[104] ? (parseInt(row[104].toString().trim()) || 0) : 0,
         startDate: row[105] ? (row[105] instanceof Date ? Utilities.formatDate(row[105], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[105].toString().trim()) : '',
-        endDate: row[106] ? (row[106] instanceof Date ? Utilities.formatDate(row[106], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[106].toString().trim()) : '',
-        expireAfterDays: row[107] ? (parseInt(row[107].toString().trim()) || '') : ''
+        endDate: row[106] ? (row[106] instanceof Date ? Utilities.formatDate(row[106], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[106].toString().trim()) : ''
       });
     }
   }
@@ -1213,13 +1210,13 @@ function saveAdminQuestion(payload) {
   }
 
   var rowValues = [];
-  for (var k = 0; k < 108; k++) {
+  for (var k = 0; k < 107; k++) {
     rowValues.push('');
   }
 
   if (targetRow <= data.length && data[targetRow - 1]) {
     var existingRow = data[targetRow - 1];
-    for (var k = 0; k < Math.min(existingRow.length, 108); k++) {
+    for (var k = 0; k < Math.min(existingRow.length, 107); k++) {
       rowValues[k] = existingRow[k];
     }
   }
@@ -1273,7 +1270,6 @@ function saveAdminQuestion(payload) {
   rowValues[104] = payload.defaultRetryResetCount || 0; // DA (105)
   rowValues[105] = payload.startDate || ''; // DB (106)
   rowValues[106] = payload.endDate || ''; // DC (107)
-  rowValues[107] = payload.expireAfterDays !== undefined && payload.expireAfterDays !== null ? payload.expireAfterDays : ''; // DD (108)
 
   sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
 
