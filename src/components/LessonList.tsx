@@ -41,8 +41,90 @@ export default function LessonList({
     }));
   }, [lessons]);
 
+  const parseFlexibleDate = (dateStr: string | undefined, isEnd = false): Date | null => {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+    let cleanStr = dateStr.trim();
+    if (!cleanStr) return null;
+    
+    // Convert Arabic/Eastern digits to Western digits
+    cleanStr = cleanStr.replace(/[٠١٢٣٤٥٦٧٨٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+
+    // 1. Direct native JavaScript Date parsing
+    const directDate = new Date(cleanStr);
+    if (!isNaN(directDate.getTime())) {
+      // If time was omitted (e.g. "2026-08-01"), set to start or end of day
+      if (!cleanStr.includes(':') && !cleanStr.includes('T') && !cleanStr.includes(' ')) {
+        if (isEnd) {
+          directDate.setHours(23, 59, 59, 999);
+        } else {
+          directDate.setHours(0, 0, 0, 0);
+        }
+      }
+      return directDate;
+    }
+
+    // 2. Match YYYY-MM-DD or YYYY/MM/DD
+    const isoMatch = cleanStr.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+    if (isoMatch) {
+      const y = parseInt(isoMatch[1], 10);
+      const m = parseInt(isoMatch[2], 10) - 1;
+      const d = parseInt(isoMatch[3], 10);
+      const h = isoMatch[4] !== undefined ? parseInt(isoMatch[4], 10) : (isEnd ? 23 : 0);
+      const mi = isoMatch[5] !== undefined ? parseInt(isoMatch[5], 10) : (isEnd ? 59 : 0);
+      const s = isoMatch[6] !== undefined ? parseInt(isoMatch[6], 10) : (isEnd ? 59 : 0);
+      return new Date(y, m, d, h, mi, s);
+    }
+
+    // 3. Match DD/MM/YYYY or DD-MM-YYYY
+    const dmyMatch = cleanStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+    if (dmyMatch) {
+      const d = parseInt(dmyMatch[1], 10);
+      const m = parseInt(dmyMatch[2], 10) - 1;
+      const y = parseInt(dmyMatch[3], 10);
+      const h = dmyMatch[4] !== undefined ? parseInt(dmyMatch[4], 10) : (isEnd ? 23 : 0);
+      const mi = dmyMatch[5] !== undefined ? parseInt(dmyMatch[5], 10) : (isEnd ? 59 : 0);
+      const s = dmyMatch[6] !== undefined ? parseInt(dmyMatch[6], 10) : (isEnd ? 59 : 0);
+      return new Date(y, m, d, h, mi, s);
+    }
+
+    return null;
+  };
+
+  const isLessonVisibleByDate = (l: WordData): boolean => {
+    const hasDays = l.expireAfterDays !== undefined && l.expireAfterDays !== null && l.expireAfterDays !== '';
+    if (!l.startDate && !l.endDate && !hasDays) return true;
+    const now = new Date();
+
+    const startDate = parseFlexibleDate(l.startDate, false);
+    if (startDate && now < startDate) {
+      return false; // Lesson has not reached its start date yet
+    }
+
+    // Check explicit endDate
+    const endDate = parseFlexibleDate(l.endDate, true);
+    if (endDate && now > endDate) {
+      return false; // Lesson has expired past its explicit end date
+    }
+
+    // Check expireAfterDays (number of days after startDate)
+    if (startDate && hasDays) {
+      const days = typeof l.expireAfterDays === 'number' ? l.expireAfterDays : parseFloat(String(l.expireAfterDays));
+      if (!isNaN(days) && days > 0) {
+        const calculatedExpiry = new Date(startDate.getTime() + days * 24 * 60 * 60 * 1000);
+        if (now > calculatedExpiry) {
+          return false; // Lesson expired based on days limit
+        }
+      }
+    }
+
+    return true;
+  };
+
   const displayedLessons = React.useMemo(() => {
     return lessonsWithIndex.filter(l => {
+      if (!isLessonVisibleByDate(l)) {
+        return false;
+      }
       if (hideCompleted && l.completed === 'تم') {
         return false;
       }

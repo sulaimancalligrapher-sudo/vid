@@ -177,24 +177,6 @@ export default function StudentLogin({
             )}
           </button>
         </form>
-
-        {/* Admin Mode Trigger Link */}
-        <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/60 text-center">
-          {isAdminUnlocked ? (
-            <span className="text-[10px] text-emerald-500 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 px-3 py-1.5 rounded-full font-extrabold inline-flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-              <span>وضع الإدارة نشط</span>
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={onUnlockAdmin}
-              className="text-[11px] text-slate-400 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 font-extrabold transition-all cursor-pointer flex items-center gap-1.5 mx-auto"
-            >
-              <span>دخول الإدارة والتحكم بالشيت 🔐</span>
-            </button>
-          )}
-        </div>
       </motion.div>
     </div>
   );
