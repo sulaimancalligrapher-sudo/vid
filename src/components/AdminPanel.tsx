@@ -5,7 +5,7 @@ import {
   RefreshCw, CheckCircle2, AlertCircle, Video, Volume2, 
   Mic, Image as ImageIcon, ShieldCheck, Lock,
   Trash2, ChevronDown, ChevronUp, Link as LinkIcon, Settings as SettingsIcon,
-  HelpCircle, MessageSquare, Calendar, Clock, Eye, EyeOff
+  HelpCircle, MessageSquare
 } from 'lucide-react';
 import { AdminQuestionRow, AdminAnswerRow, AdminQuestionItem } from '../types';
 import { fetchAdminQuestions, saveAdminQuestion, deleteAdminQuestion, fetchAdminAnswers, updateAdminAnswer } from '../api';
@@ -192,8 +192,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
       retryCount: 1,
       allowUpload: 'لا',
       defaultRetryResetCount: 1,
-      startDate: '',
-      endDate: '',
       questions: [],
       audioQuestions: [],
     });
@@ -403,9 +401,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                       <thead className="bg-slate-900 border-b border-slate-800 text-slate-400 font-bold">
                         <tr>
                           <th className="py-3 px-4 w-16 text-center"># (الصف)</th>
-                          <th className="py-3 px-4">الموضوع / العنوان (العمود A)</th>
-                          <th className="py-3 px-4">المعرف الربطي (العمود D)</th>
-                          <th className="py-3 px-4">فترة الظهور والإخفاء (DB / DC)</th>
+                          <th className="py-3 px-4">المعرف الربطي للدرس (العمود D)</th>
                           <th className="py-3 px-4 text-center w-48">الإجراءات</th>
                         </tr>
                       </thead>
@@ -415,25 +411,10 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                             <td className="py-3.5 px-4 text-center text-slate-500 font-mono">
                               {q.rowIndex || idx + 1}
                             </td>
-                            <td className="py-3.5 px-4 font-bold text-slate-200">
-                              {q.word || 'بدون عنوان'}
-                            </td>
                             <td className="py-3.5 px-4 font-bold text-amber-400 font-mono dir-ltr text-right">
                               <span className="px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs inline-block">
                                 {q.comment || 'بدون معرف'}
                               </span>
-                            </td>
-                            <td className="py-3.5 px-4 text-xs text-slate-400">
-                              <div className="flex flex-col gap-1 text-[11px] font-mono">
-                                <span className="flex items-center gap-1.5 text-emerald-400">
-                                  <Calendar className="w-3 h-3" />
-                                  <span>ظهور: {q.startDate ? q.startDate : 'دائم (غير محدد)'}</span>
-                                </span>
-                                <span className="flex items-center gap-1.5 text-rose-400">
-                                  <Clock className="w-3 h-3" />
-                                  <span>إخفاء: {q.endDate ? q.endDate : 'دائم (غير محدد)'}</span>
-                                </span>
-                              </div>
                             </td>
                             <td className="py-3.5 px-4 text-center">
                               <div className="flex items-center justify-center gap-2">
@@ -623,7 +604,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     }`}
                   >
                     <SettingsIcon className="w-3.5 h-3.5" />
-                    <span>2- إعدادات الدروس</span>
+                    <span>2- قسم الإعدادات</span>
                   </button>
 
                   <button
@@ -738,69 +719,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                   {modalSubTab === 'settings' && (
                     <div className="space-y-3.5">
                       <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-xl font-semibold text-xs">
-                        قسم إعدادات الدروس: التحكم في مواعيد ظهور وإخفاء الدرس، ومحددات الأسئلة وتفضيلات الواجبات
-                      </div>
-
-                      {/* قسم جدولة تاريخ الظهور والإخفاء */}
-                      <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl space-y-3">
-                        <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs">
-                          <Calendar className="w-4 h-4" />
-                          <span>جدولة ظهور وإخفاء الدرس (تاريخ الظهور وتاريخ الإخفاء)</span>
-                        </div>
-                        <p className="text-[11px] text-slate-300">
-                          حدّد تاريخ ووقت بداية ظهور الدرس للطلبة (العمود DB) وتاريخ ووقت إخفائه التلقائي (العمود DC):
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-slate-200 font-bold mb-1">
-                              تاريخ ظهور الدرس (العمود DB):
-                            </label>
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                value={editingQuestion.startDate || ''}
-                                onChange={(e) => setEditingQuestion({ ...editingQuestion, startDate: e.target.value })}
-                                placeholder="مثال: 2026-08-01 08:00"
-                                className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 outline-none focus:border-amber-500 font-mono text-xs"
-                              />
-                              <input
-                                type="datetime-local"
-                                onChange={(e) => {
-                                  if (e.target.value) {
-                                    setEditingQuestion({ ...editingQuestion, startDate: e.target.value.replace('T', ' ') });
-                                  }
-                                }}
-                                className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-300 cursor-pointer text-xs shrink-0"
-                                title="اختر من التقويم"
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-slate-200 font-bold mb-1">
-                              تاريخ إخفاء الدرس (العمود DC):
-                            </label>
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                value={editingQuestion.endDate || ''}
-                                onChange={(e) => setEditingQuestion({ ...editingQuestion, endDate: e.target.value })}
-                                placeholder="مثال: 2026-08-10 23:59"
-                                className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 outline-none focus:border-amber-500 font-mono text-xs"
-                              />
-                              <input
-                                type="datetime-local"
-                                onChange={(e) => {
-                                  if (e.target.value) {
-                                    setEditingQuestion({ ...editingQuestion, endDate: e.target.value.replace('T', ' ') });
-                                  }
-                                }}
-                                className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-300 cursor-pointer text-xs shrink-0"
-                                title="اختر من التقويم"
-                              />
-                            </div>
-                          </div>
-                        </div>
+                        قسم الإعدادات: التحكم في محددات الدرس وتفضيلات الطالب والواجبات
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -487,8 +487,6 @@ function getWords(sheetName, username) {
       var showPrevButton = row[100] ? row[100].toString().trim() : ''; // CW (101)
       var allowUpload = row[102] ? row[102].toString().trim() : ''; // CY (103)
       var defaultRetryResetCount = row[104] ? (parseInt(row[104].toString().trim()) || 0) : 0; // DA (105)
-      var startDate = row[105] ? (row[105] instanceof Date ? Utilities.formatDate(row[105], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[105].toString().trim()) : ''; // DB (106)
-      var endDate = row[106] ? (row[106] instanceof Date ? Utilities.formatDate(row[106], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[106].toString().trim()) : ''; // DC (107)
 
       // قراءة حالة إكمال الدرس وعدد الإعادات المتبقية للطالب المنسوب من ورقة Answers (العمود AO / Column 41 / index 40 و العمود AP / Column 42 / index 41)
       var completed = '';
@@ -595,9 +593,7 @@ function getWords(sheetName, username) {
         showPrevButton: showPrevButton,
         allowUpload: allowUpload,
         retryResetCount: retryResetCount,
-        totalQuestionsCount: totalQuestionsCount,
-        startDate: startDate,
-        endDate: endDate
+        totalQuestionsCount: totalQuestionsCount
       });
     }
   }
@@ -1162,9 +1158,7 @@ function getAdminQuestions() {
         retryCount: row[98] ? (parseInt(row[98].toString().trim()) || 0) : 0,
         showPrevButton: row[100] ? row[100].toString().trim() : '',
         allowUpload: row[102] ? row[102].toString().trim() : '',
-        defaultRetryResetCount: row[104] ? (parseInt(row[104].toString().trim()) || 0) : 0,
-        startDate: row[105] ? (row[105] instanceof Date ? Utilities.formatDate(row[105], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[105].toString().trim()) : '',
-        endDate: row[106] ? (row[106] instanceof Date ? Utilities.formatDate(row[106], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[106].toString().trim()) : ''
+        defaultRetryResetCount: row[104] ? (parseInt(row[104].toString().trim()) || 0) : 0
       });
     }
   }
@@ -1210,13 +1204,13 @@ function saveAdminQuestion(payload) {
   }
 
   var rowValues = [];
-  for (var k = 0; k < 107; k++) {
+  for (var k = 0; k < 106; k++) {
     rowValues.push('');
   }
 
   if (targetRow <= data.length && data[targetRow - 1]) {
     var existingRow = data[targetRow - 1];
-    for (var k = 0; k < Math.min(existingRow.length, 107); k++) {
+    for (var k = 0; k < Math.min(existingRow.length, 106); k++) {
       rowValues[k] = existingRow[k];
     }
   }
@@ -1268,8 +1262,6 @@ function saveAdminQuestion(payload) {
   rowValues[100] = payload.showPrevButton || ''; // CW (101)
   rowValues[102] = payload.allowUpload || ''; // CY (103)
   rowValues[104] = payload.defaultRetryResetCount || 0; // DA (105)
-  rowValues[105] = payload.startDate || ''; // DB (106)
-  rowValues[106] = payload.endDate || ''; // DC (107)
 
   sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
 

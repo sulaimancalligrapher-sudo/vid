@@ -1,4 +1,4 @@
-import { WordData, AdminQuestionRow, AdminAnswerRow, Question, AdminQuestionItem } from './types';
+import { WordData, AdminQuestionRow, AdminAnswerRow } from './types';
 
 // Helper to get Web App URL from localStorage or environment variables
 export function getWebAppUrl(): string {
@@ -81,79 +81,8 @@ export async function loginStudent(username: string, sheetNumber: string, device
   });
 }
 
-// Helper to map AdminQuestionItem to Question
-function mapAdminQuestionsToQuestions(qs?: AdminQuestionItem[]): Question[] {
-  if (!qs || !Array.isArray(qs)) return [];
-  return qs.map(q => ({
-    slotIndex: q.slotIndex,
-    time: q.time || 0,
-    image: q.image || '',
-    question: q.question || '',
-    options: typeof q.options === 'string'
-      ? (q.options === 'نص' || !q.options ? [] : q.options.split(',').map(s => s.trim()))
-      : (Array.isArray(q.options) ? q.options : []),
-    correctAnswer: q.correctAnswer || ''
-  }));
-}
-
 // 2. Fetch Lessons / Words
 export async function fetchLessons(sheetName: string, username?: string): Promise<WordData[]> {
-  if (!isApiConfigured()) {
-    const local = localStorage.getItem('mockAdminQuestions');
-    if (local) {
-      try {
-        const adminQs: AdminQuestionRow[] = JSON.parse(local);
-        return adminQs.map(q => ({
-          word: q.word,
-          fullSound: '',
-          letterSounds: [],
-          image: q.image || '',
-          comment: q.comment || '',
-          explainSound: q.explainSound || '',
-          youtubeUrl: q.youtubeUrl || '',
-          showResult: (q.showResult as 'نعم' | 'لا') || 'نعم',
-          totalQuestionsCount: q.totalQuestionsCount || 15,
-          defaultRetryResetCount: q.defaultRetryResetCount || 1,
-          retryResetCount: q.defaultRetryResetCount || 1,
-          instruction: q.instruction || '',
-          allowRecording: (q.allowRecording as 'نعم' | 'لا' | '') || '',
-          maxRecordingTime: q.maxRecordingTime || 0,
-          retryCount: q.retryCount || 0,
-          completed: '' as const,
-          showPrevButton: q.showPrevButton || '',
-          allowUpload: (q.allowUpload as 'نعم' | 'لا' | '') || '',
-          startDate: q.startDate || '',
-          endDate: q.endDate || '',
-          questions: mapAdminQuestionsToQuestions(q.questions),
-          audioQuestions: mapAdminQuestionsToQuestions(q.audioQuestions)
-        }));
-      } catch (e) {}
-    }
-    return [
-      {
-        word: 'الدرس الأول - الحروف',
-        fullSound: 'https://example.com/audio1.mp3',
-        letterSounds: [],
-        image: 'https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=800',
-        comment: 'L1',
-        explainSound: '',
-        youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-        showResult: 'نعم',
-        instruction: '',
-        allowRecording: '',
-        maxRecordingTime: 0,
-        retryCount: 0,
-        completed: '',
-        showPrevButton: '',
-        allowUpload: '',
-        retryResetCount: 1,
-        questions: [],
-        audioQuestions: [],
-        startDate: '',
-        endDate: ''
-      }
-    ];
-  }
   const params: Record<string, string> = { action: 'getWords', sheetName };
   if (username) {
     params.username = username;
@@ -341,8 +270,6 @@ export async function fetchAdminQuestions(): Promise<AdminQuestionRow[]> {
         showResult: 'نعم',
         totalQuestionsCount: 15,
         defaultRetryResetCount: 1,
-        startDate: '',
-        endDate: '',
         questions: [],
         audioQuestions: []
       }
