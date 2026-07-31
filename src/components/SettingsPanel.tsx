@@ -208,7 +208,7 @@ function getFullAppsScriptCode(): string {
  * يدعم الاستدعاء كـ API كامل لصفحة الـ React الخارجية بدون مشاكل CORS وبأقصى درجات الحماية والأمان.
  */
 
-var SPREADSHEET_ID = '1JpaachE3muqotD5-4hX6YKJSHi4ssgf5ptrq9JqFo1w'; // استبدل هذا المعرف بمعرف جدول البيانات الخاص بك
+var SPREADSHEET_ID = '1967wIJrB-0hVLHxH6rdkZbscO2S7GwxlHObtsmWFnFU'; // معرف جدول البيانات الجديد
 
 function doGet(e) {
   var action = e.parameter.action;
@@ -217,15 +217,20 @@ function doGet(e) {
   try {
     if (action === 'getWords') {
       var sheetName = e.parameter.sheetName;
-      response = getWords(sheetName);
+      var username = e.parameter.username;
+      response = getWords(sheetName, username);
     } else if (action === 'getFullAudioScore') {
-      response = { score: getFullAudioScore(e.parameter.comment, e.parameter.sheet_number, e.parameter.username) };
+      response = { score: getFullAudioScore(e.parameter.comment, e.parameter.sheet_number, e.parameter.username, e.parameter.word) };
     } else if (action === 'getLetterListenScore') {
-      response = { score: getLetterListenScore(e.parameter.comment, e.parameter.sheet_number, e.parameter.username) };
+      response = { score: getLetterListenScore(e.parameter.comment, e.parameter.sheet_number, e.parameter.username, e.parameter.word) };
     } else if (action === 'getRecordingLink') {
-      response = { link: getRecordingLink(e.parameter.comment, e.parameter.sheet_number, e.parameter.username) };
+      response = { link: getRecordingLink(e.parameter.comment, e.parameter.sheet_number, e.parameter.username, e.parameter.word) };
     } else if (action === 'getImageLink') {
-      response = { link: getImageLink(e.parameter.comment, e.parameter.sheet_number, e.parameter.username) };
+      response = { link: getImageLink(e.parameter.comment, e.parameter.sheet_number, e.parameter.username, e.parameter.word) };
+    } else if (action === 'getAdminQuestions') {
+      response = getAdminQuestions();
+    } else if (action === 'getAdminAnswers') {
+      response = getAdminAnswers();
     } else {
       // افتراضي: إرجاع البيانات العامة لصفحة الواجهة
       response = getData();
@@ -254,29 +259,35 @@ function doPost(e) {
     } else if (action === 'saveLetterListenScore') {
       response = saveLetterListenScore(payload.sheet_number, payload.username, payload.word, payload.score, payload.timestamp, payload.comment);
     } else if (action === 'uploadImageFromBase64') {
-      var link = uploadImageFromBase64(payload.base64Data, payload.mimeType, payload.word, payload.username, payload.sheet_number);
+      var link = uploadImageFromBase64(payload.base64Data, payload.mimeType, payload.word, payload.username, payload.sheet_number, payload.comment);
       response = { success: true, link: link };
     } else if (action === 'uploadRecordingFromBase64') {
-      var link = uploadRecordingFromBase64(payload.base64Data, payload.mimeType, payload.word, payload.username, payload.sheet_number);
+      var link = uploadRecordingFromBase64(payload.base64Data, payload.mimeType, payload.word, payload.username, payload.sheet_number, payload.comment);
       response = { success: true, link: link };
     } else if (action === 'saveImageLink') {
-      saveImageLink(payload.sheet_number, payload.username, payload.comment, payload.link, payload.timestamp);
+      saveImageLink(payload.sheet_number, payload.username, payload.comment, payload.link, payload.timestamp, payload.word);
       response = { success: true };
     } else if (action === 'saveRecordingLink') {
-      saveRecordingLink(payload.sheet_number, payload.username, payload.comment, payload.link, payload.timestamp);
+      saveRecordingLink(payload.sheet_number, payload.username, payload.comment, payload.link, payload.timestamp, payload.word);
       response = { success: true };
     } else if (action === 'markLessonCompleted') {
-      markLessonCompleted(payload.sheetName, payload.lessonIndex, payload.username);
+      markLessonCompleted(payload.sheetName, payload.lessonIndex, payload.username, payload.comment, payload.word);
       response = { success: true };
     } else if (action === 'unmarkLessonCompleted') {
-      unmarkLessonCompleted(payload.sheetName, payload.lessonIndex);
+      unmarkLessonCompleted(payload.sheetName, payload.lessonIndex, payload.username, payload.comment, payload.word);
       response = { success: true };
     } else if (action === 'resetToCompleted') {
-      resetToCompleted(payload.sheetName, payload.lessonIndex);
+      resetToCompleted(payload.sheetName, payload.lessonIndex, payload.username, payload.comment, payload.word);
       response = { success: true };
     } else if (action === 'decrementRetryCount') {
-      decrementRetryCount(payload.sheetName, payload.lessonIndex);
+      decrementRetryCount(payload.sheetName, payload.lessonIndex, payload.username, payload.comment, payload.word);
       response = { success: true };
+    } else if (action === 'saveAdminQuestion') {
+      response = saveAdminQuestion(payload);
+    } else if (action === 'deleteAdminQuestion') {
+      response = deleteAdminQuestion(payload);
+    } else if (action === 'updateAdminAnswer') {
+      response = updateAdminAnswer(payload);
     } else {
       response = { success: false, message: 'الإجراء المطلوب غير معروف' };
     }
@@ -329,7 +340,7 @@ function loginUser(username, sheet_number, deviceId, lat, lng) {
   try {
     var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     var settingsSheet = ss.getSheetByName('Settings');
-    if (!settingsSheet) return { success: false, message: 'ورقة الإعدادات غير موجودة' };
+    if (!settingsSheet) return { success: false, message: 'ورقة الإعدادات Settings غير موجودة' };
     var data = settingsSheet.getDataRange().getValues();
     var userRow = -1;
     for (var r = 1; r < data.length; r++) {
@@ -405,109 +416,269 @@ function loginUser(username, sheet_number, deviceId, lat, lng) {
     } else {
       return { success: false, message: 'خطأ في تسجيل الجهاز' };
     }
-    var sheetName = sheet_number;
-    var studentSheet = ss.getSheetByName(sheetName);
-    if (!studentSheet) {
-      return { success: false, message: 'ورقة الطالب غير موجودة' };
+    
+    var questionsSheet = ss.getSheetByName('Questions');
+    if (!questionsSheet) {
+      return { success: false, message: 'ورقة الأسئلة Questions غير موجودة في جدول البيانات' };
     }
-    return { success: true, sheetName: sheetName };
+    return { success: true, sheetName: sheet_number };
   } catch (e) {
     return { success: false, message: 'خطأ في الدخول: ' + e.message };
   }
 }
 
-function getWords(sheetName) {
+function formatDriveImageUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  url = url.trim();
+  if (!url) return '';
+
+  var fileId = null;
+  var fileDMatch = url.match(/\\/file\\/d\\/([a-zA-Z0-9_-]+)/);
+  if (fileDMatch && fileDMatch[1]) {
+    fileId = fileDMatch[1];
+  } else {
+    var idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (idMatch && idMatch[1]) {
+      fileId = idMatch[1];
+    } else {
+      var ucMatch = url.match(/googleusercontent\\.com\\/d\\/([a-zA-Z0-9_-]+)/);
+      if (ucMatch && ucMatch[1]) {
+        fileId = ucMatch[1];
+      }
+    }
+  }
+
+  if (fileId) {
+    return 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1200';
+  }
+
+  return url;
+}
+
+function getWords(sheetName, username) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(sheetName);
-  if (!sheet) return [];
-  var fullData = sheet.getDataRange().getValues();
+  var questionsSheet = ss.getSheetByName('Questions');
+  if (!questionsSheet) return [];
+  
+  var answersSheet = ss.getSheetByName('Answers');
+  var answersData = answersSheet ? answersSheet.getDataRange().getValues() : [];
+  
+  var fullData = questionsSheet.getDataRange().getValues();
   var result = [];
+  
   for (var rowIndex = 1; rowIndex < fullData.length; rowIndex++) {
     var row = fullData[rowIndex];
     if (row[0]) {
-      var word = row[0].toString().trim();
-      var fullSound = row[2] ? row[2].toString().trim() : '';
-      var image = row[4] ? row[4].toString().trim() : '';
-      var comment = row[3] ? row[3].toString().trim() : '';
-      var explainSound = row[5] ? row[5].toString().trim() : '';
-      var youtubeUrl = row[6] ? row[6].toString().trim() : '';
-      var showResult = row[7] ? row[7].toString().trim() : 'نعم';
-      var instruction = row[94] ? row[94].toString().trim() : '';
-      var allowRecording = row[95] ? row[95].toString().trim() : '';
-      var maxRecordingTime = row[97] ? parseInt(row[97].toString().trim()) : 0;
-      var retryCount = row[98] ? parseInt(row[98].toString().trim()) : 0;
-      var completed = row[103] ? row[103].toString().trim() : '';
-      var showPrevButton = row[100] ? row[100].toString().trim() : '';
-      var uploadTitle = row[101] ? row[101].toString().trim() : '';
-      var allowUpload = row[102] ? row[102].toString().trim() : '';
-      var retryResetCount = row[104] ? parseInt(row[104].toString().trim()) : 0;
-      var resetCondition = row[105] ? row[105].toString().trim() : 'لا';
-      var dzValue = row[129] ? row[129].toString().trim() : '';
-      
-      var rawLinks = row[1] ? row[1].toString() : '';
+      var word = row[0].toString().trim(); // A (1)
+      var rawLinks = row[1] ? row[1].toString() : ''; // B (2)
+      var fullSound = row[2] ? row[2].toString().trim() : ''; // C (3)
+      var comment = row[3] ? row[3].toString().trim() : ''; // D (4) - المعرف الربطي للدرس
+      var image = row[4] ? formatDriveImageUrl(row[4].toString().trim()) : ''; // E (5)
+      var explainSound = row[5] ? row[5].toString().trim() : ''; // F (6)
+      var youtubeUrl = row[6] ? row[6].toString().trim() : ''; // G (7)
+      var showResult = row[7] ? row[7].toString().trim() : 'نعم'; // H (8)
+      var totalQuestionsCount = row[8] ? (parseInt(row[8].toString().trim()) || 0) : 0; // I (9)
+
+      // الإعدادات والمحددات المتقدمة للدرس من ورقة Questions
+      var instruction = row[94] ? row[94].toString().trim() : ''; // CQ (95)
+      var allowRecording = row[95] ? row[95].toString().trim() : ''; // CR (96)
+      var maxRecordingTime = row[97] ? (parseInt(row[97].toString().trim()) || 0) : 0; // CT (98)
+      var retryCount = row[98] ? (parseInt(row[98].toString().trim()) || 0) : 0; // CU (99)
+      var showPrevButton = row[100] ? row[100].toString().trim() : ''; // CW (101)
+      var allowUpload = row[102] ? row[102].toString().trim() : ''; // CY (103)
+      var defaultRetryResetCount = row[104] ? (parseInt(row[104].toString().trim()) || 0) : 0; // DA (105)
+      var startDate = row[105] ? (row[105] instanceof Date ? Utilities.formatDate(row[105], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[105].toString().trim()) : ''; // DB (106)
+      var endDate = row[106] ? (row[106] instanceof Date ? Utilities.formatDate(row[106], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[106].toString().trim()) : ''; // DC (107)
+      var expireAfterDays = row[107] ? (parseInt(row[107].toString().trim()) || '') : ''; // DD (108)
+
+      // قراءة حالة إكمال الدرس وعدد الإعادات المتبقية للطالب المنسوب من ورقة Answers (العمود AO / Column 41 / index 40 و العمود AP / Column 42 / index 41)
+      var completed = '';
+      var studentRetryResetCount = null;
+      if (answersData.length > 1 && comment) {
+        for (var a = 1; a < answersData.length; a++) {
+          var aSheetNum = answersData[a][0] ? answersData[a][0].toString().trim() : '';
+          var aUser = answersData[a][1] ? answersData[a][1].toString().trim() : '';
+          var aComment = answersData[a][2] ? answersData[a][2].toString().trim() : '';
+          
+          if ((!sheetName || aSheetNum === sheetName.toString().trim()) &&
+              (!username || aUser === username.toString().trim()) &&
+              aComment === comment) {
+            completed = answersData[a][40] ? answersData[a][40].toString().trim() : ''; // العمود AO (41)
+            if (answersData[a][41] !== undefined && answersData[a][41] !== null && answersData[a][41] !== '') {
+              studentRetryResetCount = parseInt(answersData[a][41].toString().trim());
+            }
+            break;
+          }
+        }
+      }
+
+      var retryResetCount = (studentRetryResetCount !== null && !isNaN(studentRetryResetCount)) ? studentRetryResetCount : defaultRetryResetCount;
+
       var letterSounds = rawLinks
         .split(/[,،]\\s*/)
         .map(function(s) { return s.trim(); })
         .filter(function(s) { return s.indexOf('http') === 0; });
-        
+
+      // أسئلة الفيديو (الأعمدة J إلى CF - index 9 إلى 83 - 15 سؤالاً، كل سؤال 5 أعمدة)
       var questions = [];
-      var count = 0;
-      for (var j = 9; j < row.length && count < 15; j += 5) {
-        if (row[j] && row[j + 2]) {
+      var videoSlot = 0;
+      for (var j = 9; j < row.length && videoSlot < 15; j += 5, videoSlot++) {
+        if (row[j] !== undefined && row[j] !== null && row[j].toString().trim() !== '') {
           var time = parseFloat(row[j].toString().trim());
-          var questionImage = row[j + 1] ? row[j + 1].toString().trim() : '';
-          var questionText = row[j + 2].toString().trim();
+          if (isNaN(time)) time = 0;
+          var questionImage = row[j + 1] ? formatDriveImageUrl(row[j + 1].toString().trim()) : '';
+          var questionText = row[j + 2] ? row[j + 2].toString().trim() : '';
           var optionsStr = row[j + 3] ? row[j + 3].toString().trim() : '';
           var correctAnswer = row[j + 4] ? row[j + 4].toString().trim() : '';
-          var options = [];
-          if (optionsStr !== 'نص') {
-            options = optionsStr.split(',');
+
+          if (questionText !== '' || questionImage !== '') {
+            var options = [];
+            if (optionsStr && optionsStr !== 'نص') {
+              options = optionsStr.split(',');
+            }
+            questions.push({
+              slotIndex: videoSlot,
+              time: time,
+              image: questionImage,
+              question: questionText,
+              options: options.map(function(opt) { return opt.trim(); }),
+              correctAnswer: correctAnswer
+            });
           }
-          questions.push({
-            time: time,
-            image: questionImage,
-            question: questionText,
-            options: options.map(function(opt) { return opt.trim(); }),
-            correctAnswer: correctAnswer
-          });
-          count++;
         }
       }
-      
+
+      // أسئلة الصوت والاستماع (الأعمدة CG إلى CP - index 84 إلى 93 - سؤالان)
       var audioQuestions = [];
-      count = 0;
-      for (var j = 84; j < row.length && count < 2; j += 5) {
-        if (row[j] && row[j + 2]) {
+      var audioSlot = 0;
+      for (var j = 84; j < row.length && audioSlot < 2; j += 5, audioSlot++) {
+        if (row[j] !== undefined && row[j] !== null && row[j].toString().trim() !== '') {
           var time = parseFloat(row[j].toString().trim());
-          var questionImage = row[j + 1] ? row[j + 1].toString().trim() : '';
-          var questionText = row[j + 2].toString().trim();
+          if (isNaN(time)) time = 0;
+          var questionImage = row[j + 1] ? formatDriveImageUrl(row[j + 1].toString().trim()) : '';
+          var questionText = row[j + 2] ? row[j + 2].toString().trim() : '';
           var optionsStr = row[j + 3] ? row[j + 3].toString().trim() : '';
           var correctAnswer = row[j + 4] ? row[j + 4].toString().trim() : '';
-          var options = [];
-          if (optionsStr !== 'نص') {
-            options = optionsStr.split(',');
+
+          if (questionText !== '' || questionImage !== '') {
+            var options = [];
+            if (optionsStr && optionsStr !== 'نص') {
+              options = optionsStr.split(',');
+            }
+            audioQuestions.push({
+              slotIndex: audioSlot,
+              time: time,
+              image: questionImage,
+              question: questionText,
+              options: options.map(function(opt) { return opt.trim(); }),
+              correctAnswer: correctAnswer
+            });
           }
-          audioQuestions.push({
-            time: time,
-            image: questionImage,
-            question: questionText,
-            options: options.map(function(opt) { return opt.trim(); }),
-            correctAnswer: correctAnswer
-          });
-          count++;
         }
       }
-      
+
       result.push({
-        word: word, fullSound: fullSound, letterSounds: letterSounds, image: image, comment: comment,
-        explainSound: explainSound, youtubeUrl: youtubeUrl, questions: questions, audioQuestions: audioQuestions, 
-        showResult: showResult, instruction: instruction, allowRecording: allowRecording, maxRecordingTime: maxRecordingTime, 
-        retryCount: retryCount, completed: completed, showPrevButton: showPrevButton, uploadTitle: uploadTitle, 
-        allowUpload: allowUpload, retryResetCount: retryResetCount, resetCondition: resetCondition, dzValue: dzValue
+        word: word,
+        fullSound: fullSound,
+        letterSounds: letterSounds,
+        image: image,
+        comment: comment,
+        explainSound: explainSound,
+        youtubeUrl: youtubeUrl,
+        questions: questions,
+        audioQuestions: audioQuestions,
+        showResult: showResult,
+        instruction: instruction,
+        allowRecording: allowRecording,
+        maxRecordingTime: maxRecordingTime,
+        retryCount: retryCount,
+        completed: completed,
+        showPrevButton: showPrevButton,
+        allowUpload: allowUpload,
+        retryResetCount: retryResetCount,
+        totalQuestionsCount: totalQuestionsCount,
+        startDate: startDate,
+        endDate: endDate,
+        expireAfterDays: expireAfterDays
       });
     }
   }
   return result;
+}
+
+// ------------------- دوال مساعدة للبحث وإنشاء الصفوف -------------------
+
+function findOrCreateAnswersRow(sheet, sheet_number, username, comment, word, youtubeUrl, explainSound) {
+  var data = sheet.getDataRange().getValues();
+  var rowNum = -1;
+  
+  var cleanSheetNum = sheet_number ? sheet_number.toString().trim() : '';
+  var cleanUser = username ? username.toString().trim() : '';
+  var cleanComment = comment ? comment.toString().trim() : '';
+  var cleanWord = word ? word.toString().trim() : '';
+
+  for (var r = 1; r < data.length; r++) {
+    var aSheet = data[r][0] ? data[r][0].toString().trim() : '';
+    var aUser = data[r][1] ? data[r][1].toString().trim() : '';
+    var aComment = data[r][2] ? data[r][2].toString().trim() : '';
+    var aWord = data[r][26] ? data[r][26].toString().trim() : ''; // العمود AA (27)
+
+    if ((!cleanSheetNum || aSheet === cleanSheetNum) && (!cleanUser || aUser === cleanUser)) {
+      var match = false;
+      if (cleanComment !== '' && aComment === cleanComment) {
+        match = true;
+      } else if (cleanWord !== '' && (aComment === cleanWord || aWord === cleanWord)) {
+        match = true;
+      } else if (cleanComment !== '' && aWord === cleanComment) {
+        match = true;
+      }
+      
+      if (match) {
+        rowNum = r + 1;
+        if (cleanComment !== '' && aComment !== cleanComment) {
+          sheet.getRange(rowNum, 3).setValue(cleanComment);
+        }
+        if (cleanWord !== '' && aWord !== cleanWord) {
+          sheet.getRange(rowNum, 27).setValue(cleanWord);
+        }
+        break;
+      }
+    }
+  }
+
+  if (rowNum === -1) {
+    var newRow = [cleanSheetNum, cleanUser, cleanComment, youtubeUrl ? youtubeUrl.toString().trim() : ''];
+    for (var i = 0; i < 15; i++) newRow.push('');
+    newRow.push('', '', explainSound ? explainSound.toString().trim() : '');
+    for (var i = 0; i < 2; i++) newRow.push('');
+    newRow.push('', '', cleanWord, '', '', '', '', '', '', '', 0, 0, 0, 0, '', '', '');
+    sheet.appendRow(newRow);
+    rowNum = sheet.getLastRow();
+  }
+
+  return rowNum;
+}
+
+function findAnswersRowOnly(sheet, sheet_number, username, comment, word) {
+  var data = sheet.getDataRange().getValues();
+  var cleanSheetNum = sheet_number ? sheet_number.toString().trim() : '';
+  var cleanUser = username ? username.toString().trim() : '';
+  var cleanComment = comment ? comment.toString().trim() : '';
+  var cleanWord = word ? word.toString().trim() : '';
+
+  for (var r = 1; r < data.length; r++) {
+    var aSheet = data[r][0] ? data[r][0].toString().trim() : '';
+    var aUser = data[r][1] ? data[r][1].toString().trim() : '';
+    var aComment = data[r][2] ? data[r][2].toString().trim() : '';
+    var aWord = data[r][26] ? data[r][26].toString().trim() : '';
+
+    if ((!cleanSheetNum || aSheet === cleanSheetNum) && (!cleanUser || aUser === cleanUser)) {
+      if (cleanComment !== '' && aComment === cleanComment) return r + 1;
+      if (cleanWord !== '' && (aComment === cleanWord || aWord === cleanWord)) return r + 1;
+      if (cleanComment !== '' && aWord === cleanComment) return r + 1;
+    }
+  }
+  return -1;
 }
 
 // ------------------- دوال حفظ الأداء والإجابات -------------------
@@ -523,31 +694,19 @@ function saveAnswer(payload) {
     for (var i = 1; i <= 15; i++) { headers.push('النتيجة ' + i); }
     headers.push('التوقيت', 'فراغ', 'رابط الصوت');
     for (var i = 1; i <= 2; i++) { headers.push('النتيجة ' + i); }
-    headers.push('التوقيت', 'فراغ', 'موضوع الصوت', 'درجة الاستماع', 'درجة استماع الحروف', 'رابط التسجيل', 'تاريخ الإرسال', 'فراغ', 'رابط الصورة', 'تاريخ إرسال الصورة', 'عدد إرسال فيديو', 'عدد إرسال صوت', 'عدد إرسال تسجيل', 'عدد إرسال صورة', 'النتيجة الكلية', 'الدرجة النهائية');
+    headers.push('التوقيت', 'فراغ', 'موضوع الصوت', 'درجة الاستماع', 'درجة استماع الحروف', 'رابط التسجيل', 'تاريخ الإرسال', 'فراغ', 'رابط الصورة', 'تاريخ إرسال الصورة', 'عدد إرسال فيديو', 'عدد إرسال صوت', 'عدد إرسال تسجيل', 'عدد إرسال صورة', 'النتيجة الكلية', 'الدرجة النهائية', 'حالة الدرس');
     sheet.appendRow(headers);
   }
+
+  var rowNum = findOrCreateAnswersRow(sheet, payload.sheet_number, payload.username, payload.comment, payload.word, payload.youtubeUrl, payload.explainSound);
   
-  var data = sheet.getDataRange().getValues();
-  var rowNum = -1;
-  for (var r = 1; r < data.length; r++) {
-    if (data[r][0].toString().trim() === payload.sheet_number.trim() && 
-        data[r][1].toString().trim() === payload.username.trim() && 
-        data[r][2].toString().trim() === payload.comment.trim()) {
-      rowNum = r + 1;
-      break;
-    }
+  if (payload.youtubeUrl && payload.youtubeUrl.trim()) {
+    sheet.getRange(rowNum, 4).setValue(payload.youtubeUrl.trim());
   }
-  
-  if (rowNum === -1) {
-    var newRow = [payload.sheet_number.trim(), payload.username.trim(), payload.comment.trim(), payload.youtubeUrl.trim()];
-    for (var i = 0; i < 15; i++) newRow.push('');
-    newRow.push('', '', payload.explainSound.trim());
-    for (var i = 0; i < 2; i++) newRow.push('');
-    newRow.push('', '', '', '', '', '', '', '', '', '', 0, 0, 0, 0, '', '');
-    sheet.appendRow(newRow);
-    rowNum = sheet.getLastRow();
+  if (payload.explainSound && payload.explainSound.trim()) {
+    sheet.getRange(rowNum, 22).setValue(payload.explainSound.trim());
   }
-  
+
   var result = '';
   if (payload.isCorrect === null) {
     result = payload.selectedAnswer.trim();
@@ -563,7 +722,7 @@ function saveAnswer(payload) {
       var currentVideoCount = sheet.getRange(rowNum, 35).getValue() || 0;
       sheet.getRange(rowNum, 35).setValue(currentVideoCount + 1);
     }
-    حسابالنتائج(payload.sheet_number, payload.comment, rowNum);
+    calculateResults(payload.sheet_number, payload.comment, rowNum);
   } else if (payload.type === 'audio') {
     var col = 23 + payload.questionIndex;
     sheet.getRange(rowNum, col).setValue(result);
@@ -572,52 +731,63 @@ function saveAnswer(payload) {
       var currentAudioCount = sheet.getRange(rowNum, 36).getValue() || 0;
       sheet.getRange(rowNum, 36).setValue(currentAudioCount + 1);
     }
-    حسابالقسمالثاني(payload.sheet_number, payload.comment, rowNum);
+    calculateSectionTwo(payload.sheet_number, payload.comment, rowNum);
   }
   return { success: true };
 }
 
-function حسابالنتائج(sheet_number, comment, rowNum) {
+function calculateResults(sheet_number, comment, rowNum) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var studentSheet = ss.getSheetByName(sheet_number);
+  var questionsSheet = ss.getSheetByName('Questions');
   var answersSheet = ss.getSheetByName('Answers');
-  if (!studentSheet || !answersSheet) return;
-  var studentData = studentSheet.getDataRange().getValues();
+  if (!answersSheet) return;
+
   var totalQuestions = 0;
-  for (var r = 1; r < studentData.length; r++) {
-    if (studentData[r][3] && studentData[r][3].toString().trim() === comment.trim()) {
-      totalQuestions = parseInt(studentData[r][8]) || 0;
-      break;
+  if (questionsSheet && comment) {
+    var qData = questionsSheet.getDataRange().getValues();
+    for (var r = 1; r < qData.length; r++) {
+      if (qData[r][3] && qData[r][3].toString().trim() === comment.toString().trim()) {
+        totalQuestions = parseInt(qData[r][8]) || 0; // العمود I (9)
+        break;
+      }
     }
   }
-  if (totalQuestions <= 0) {
-    answersSheet.getRange(rowNum, 21).setValue("");
-    return;
-  }
+
   var answersRow = answersSheet.getRange(rowNum, 5, 1, 15).getValues()[0];
   var correct = 0;
   var wrong = 0;
+  var answeredCount = 0;
+
   for (var col = 0; col < 15; col++) {
     var value = (answersRow[col] || "").toString().trim().toLowerCase();
     if (value === "") continue;
+    answeredCount++;
     if (value === "صح" || value === "صحيح" || value === "true" || value === "✓") {
       correct++;
     } else if (value === "خطأ" || value === "خاطئ" || value === "false" || value === "✗") {
       wrong++;
     }
   }
+
+  if (totalQuestions <= 0) {
+    totalQuestions = answeredCount > 0 ? answeredCount : 15;
+  }
+
   var noAnswer = totalQuestions - (correct + wrong);
-  var percentage = Math.round((correct / totalQuestions) * 100);
-  var resultText = "عدد الأسئلة " + totalQuestions + " - الصحيحة " + correct + " و الخاطئة " + wrong;
+  if (noAnswer < 0) noAnswer = 0;
+  var percentage = totalQuestions > 0 ? Math.round((correct / totalQuestions) * 100) : 0;
+
+  var resultText = "عدد الأسئلة " + totalQuestions + " - الصحيحة " + correct + " والخاطئة " + wrong;
   if (noAnswer > 0) {
     resultText += " و " + noAnswer + " لا يوجد إجابة";
   }
-  resultText += " و حصلت على " + percentage + "%";
-  answersSheet.getRange(rowNum, 21).setValue(resultText);
+  resultText += " وحصلت على " + percentage + "%";
+
+  answersSheet.getRange(rowNum, 21).setValue(resultText); // العمود U (21)
   calculatePercentages(answersSheet, rowNum);
 }
 
-function حسابالقسمالثاني(sheet_number, comment, rowNum) {
+function calculateSectionTwo(sheet_number, comment, rowNum) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var answersSheet = ss.getSheetByName('Answers');
   if (!answersSheet) return;
@@ -667,21 +837,16 @@ function getStatus(value) {
   return "text";
 }
 
-function getFullAudioScore(comment, sheet_number, username) {
+function getFullAudioScore(comment, sheet_number, username, word) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName('Answers');
   if (!sheet) return 0;
-  var data = sheet.getDataRange().getValues();
-  for (var r = 1; r < data.length; r++) {
-    if (data[r][0].toString().trim() === sheet_number.trim() && 
-        data[r][1].toString().trim() === username.trim() && 
-        data[r][2].toString().trim() === comment.trim()) {
-      var scoreStr = data[r][27];
-      if (scoreStr) {
-        var score = parseFloat(scoreStr.toString().replace('%', ''));
-        return isNaN(score) ? 0 : score;
-      }
-      return 0;
+  var rowNum = findAnswersRowOnly(sheet, sheet_number, username, comment, word);
+  if (rowNum !== -1) {
+    var scoreStr = sheet.getRange(rowNum, 28).getValue(); // Column AB (28)
+    if (scoreStr) {
+      var score = parseFloat(scoreStr.toString().replace('%', ''));
+      return isNaN(score) ? 0 : score;
     }
   }
   return 0;
@@ -691,49 +856,27 @@ function saveFullAudioScore(sheet_number, username, word, score, timestamp, comm
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName('Answers');
   if (!sheet) return { success: false };
-  var data = sheet.getDataRange().getValues();
-  var rowNum = -1;
-  for (var r = 1; r < data.length; r++) {
-    if (data[r][0].toString().trim() === sheet_number.trim() && 
-        data[r][1].toString().trim() === username.trim() && 
-        data[r][2].toString().trim() === comment.trim()) {
-      rowNum = r + 1;
-      break;
-    }
-  }
-  
-  if (rowNum === -1) {
-    var newRow = [sheet_number.trim(), username.trim(), comment.trim(), ''];
-    for (var i = 0; i < 15; i++) newRow.push('');
-    newRow.push('', '', '');
-    for (var i = 0; i < 2; i++) newRow.push('');
-    newRow.push('', '', '', '', '', '', '', '', '', '', 0, 0, 0, 0, '', '');
-    sheet.appendRow(newRow);
-    rowNum = sheet.getLastRow();
-  }
-  sheet.getRange(rowNum, 27).setValue(word.trim());
+
+  var rowNum = findOrCreateAnswersRow(sheet, sheet_number, username, comment, word);
+
+  sheet.getRange(rowNum, 27).setValue(word ? word.trim() : '');
   sheet.getRange(rowNum, 28).setValue(score + '%');
   calculatePercentages(sheet, rowNum);
   return { success: true };
 }
 
-function getLetterListenScore(comment, sheet_number, username) {
+function getLetterListenScore(comment, sheet_number, username, word) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName('Answers');
   if (!sheet) return 0;
-  var data = sheet.getDataRange().getValues();
-  for (var r = 1; r < data.length; r++) {
-    if (data[r][0].toString().trim() === sheet_number.trim() && 
-        data[r][1].toString().trim() === username.trim() && 
-        data[r][2].toString().trim() === comment.trim()) {
-      var scoreStr = data[r][28];
-      if (scoreStr) {
-        scoreStr = arabicToWestern(scoreStr.toString());
-        scoreStr = scoreStr.replace(/%|٪/g, '').trim();
-        var score = parseFloat(scoreStr);
-        return isNaN(score) ? 0 : score;
-      }
-      return 0;
+  var rowNum = findAnswersRowOnly(sheet, sheet_number, username, comment, word);
+  if (rowNum !== -1) {
+    var scoreStr = sheet.getRange(rowNum, 29).getValue(); // Column AC (29)
+    if (scoreStr) {
+      scoreStr = arabicToWestern(scoreStr.toString());
+      scoreStr = scoreStr.replace(/%|٪/g, '').trim();
+      var score = parseFloat(scoreStr);
+      return isNaN(score) ? 0 : score;
     }
   }
   return 0;
@@ -744,67 +887,46 @@ function saveLetterListenScore(sheet_number, username, word, score, timestamp, c
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName('Answers');
   if (!sheet) return { success: false };
-  
-  var data = sheet.getDataRange().getValues();
-  var rowNum = -1;
-  for (var r = 1; r < data.length; r++) {
-    if (data[r][0].toString().trim() === sheet_number.trim() && 
-        data[r][1].toString().trim() === username.trim() && 
-        data[r][2].toString().trim() === comment.trim()) {
-      rowNum = r + 1;
-      break;
-    }
-  }
-  
-  if (rowNum === -1) {
-    var newRow = [sheet_number.trim(), username.trim(), comment.trim(), ''];
-    for (var i = 0; i < 15; i++) newRow.push('');
-    newRow.push('', '', '');
-    for (var i = 0; i < 2; i++) newRow.push('');
-    newRow.push('', '', '', '', '', '', '', '', '', '', 0, 0, 0, 0, '', '');
-    sheet.appendRow(newRow);
-    rowNum = sheet.getLastRow();
-  }
+
+  var rowNum = findOrCreateAnswersRow(sheet, sheet_number, username, comment, word);
+
   sheet.getRange(rowNum, 29).setValue(score + '%');
   calculatePercentages(sheet, rowNum);
   return { success: true };
 }
 
-function getRecordingLink(comment, sheet_number, username) {
+function getRecordingLink(comment, sheet_number, username, word) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName('Answers');
   if (!sheet) return '';
-  var data = sheet.getDataRange().getValues();
-  for (var r = 1; r < data.length; r++) {
-    if (data[r][0].toString().trim() === sheet_number.trim() && data[r][1].toString().trim() === username.trim() && data[r][2].toString().trim() === comment.trim()) {
-      return data[r][29] ? data[r][29].toString().trim() : '';
-    }
+  var rowNum = findAnswersRowOnly(sheet, sheet_number, username, comment, word);
+  if (rowNum !== -1) {
+    return sheet.getRange(rowNum, 30).getValue() ? sheet.getRange(rowNum, 30).getValue().toString().trim() : ''; // Column AD (30)
   }
   return '';
 }
 
-function getImageLink(comment, sheet_number, username) {
+function getImageLink(comment, sheet_number, username, word) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName('Answers');
   if (!sheet) return '';
-  var data = sheet.getDataRange().getValues();
-  for (var r = 1; r < data.length; r++) {
-    if (data[r][0].toString().trim() === sheet_number.trim() && data[r][1].toString().trim() === username.trim() && data[r][2].toString().trim() === comment.trim()) {
-      return data[r][31] ? data[r][31].toString().trim() : '';
-    }
+  var rowNum = findAnswersRowOnly(sheet, sheet_number, username, comment, word);
+  if (rowNum !== -1) {
+    return sheet.getRange(rowNum, 32).getValue() ? sheet.getRange(rowNum, 32).getValue().toString().trim() : ''; // Column AF (32)
   }
   return '';
 }
 
 // ------------------- دوال رفع ملفات الوسائط -------------------
 
-function uploadImageFromBase64(base64Data, mimeType, word, username, sheet_number) {
+function uploadImageFromBase64(base64Data, mimeType, word, username, sheet_number, comment) {
   try {
-    var folderId = '1XRSjYZMT8j_0t5U9Jtdr8JNN1B2P2iL5'; // استبدل هذا المعرف بمعرف مجلد Drive الذي تريد تخزين الصور به
+    var folderId = '1XRSjYZMT8j_0t5U9Jtdr8JNN1B2P2iL5';
     var actualMime = mimeType || 'image/jpeg';
     var actualWord = word || 'صورة';
     var actualUsername = username || 'طالب';
     var actualSheetNumber = sheet_number || '1';
+    var actualComment = comment || getCommentForWord(actualSheetNumber, actualWord);
     
     var timestamp = new Date().toISOString().replace(/:/g, '-');
     var filename = 'صورة_' + actualUsername + '_' + actualSheetNumber + '_' + actualWord + '_' + timestamp + '.jpg';
@@ -816,8 +938,7 @@ function uploadImageFromBase64(base64Data, mimeType, word, username, sheet_numbe
     var file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     
-    var comment = getCommentForWord(actualSheetNumber, actualWord);
-    saveImageLink(actualSheetNumber, actualUsername, comment, file.getUrl(), new Date().toLocaleString());
+    saveImageLink(actualSheetNumber, actualUsername, actualComment, file.getUrl(), new Date().toLocaleString(), actualWord);
     
     return file.getUrl();
   } catch (e) {
@@ -825,13 +946,14 @@ function uploadImageFromBase64(base64Data, mimeType, word, username, sheet_numbe
   }
 }
 
-function uploadRecordingFromBase64(base64Data, mimeType, word, username, sheet_number) {
+function uploadRecordingFromBase64(base64Data, mimeType, word, username, sheet_number, comment) {
   try {
-    var folderId = '1XRSjYZMT8j_0t5U9Jtdr8JNN1B2P2iL5'; // استبدل بمعرف مجلد Drive الخاص بك للتسجيلات الصوتية
+    var folderId = '1XRSjYZMT8j_0t5U9Jtdr8JNN1B2P2iL5';
     var actualMime = mimeType || 'audio/webm';
     var actualWord = word || 'واجب';
     var actualUsername = username || 'طالب';
     var actualSheetNumber = sheet_number || '1';
+    var actualComment = comment || getCommentForWord(actualSheetNumber, actualWord);
     
     var timestamp = new Date().toISOString().replace(/:/g, '-');
     var ext = 'webm';
@@ -848,8 +970,7 @@ function uploadRecordingFromBase64(base64Data, mimeType, word, username, sheet_n
     var file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     
-    var comment = getCommentForWord(actualSheetNumber, actualWord);
-    saveRecordingLink(actualSheetNumber, actualUsername, comment, file.getUrl(), new Date().toLocaleString());
+    saveRecordingLink(actualSheetNumber, actualUsername, actualComment, file.getUrl(), new Date().toLocaleString(), actualWord);
     
     return file.getUrl();
   } catch (e) {
@@ -857,31 +978,12 @@ function uploadRecordingFromBase64(base64Data, mimeType, word, username, sheet_n
   }
 }
 
-function saveImageLink(sheet_number, username, comment, link, timestamp) {
+function saveImageLink(sheet_number, username, comment, link, timestamp, word) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName('Answers');
   if (!sheet) return;
   
-  var data = sheet.getDataRange().getValues();
-  var rowNum = -1;
-  for (var r = 1; r < data.length; r++) {
-    if (data[r][0].toString().trim() === sheet_number.trim() && 
-        data[r][1].toString().trim() === username.trim() && 
-        data[r][2].toString().trim() === comment.trim()) {
-      rowNum = r + 1;
-      break;
-    }
-  }
-  
-  if (rowNum === -1) {
-    var newRow = [sheet_number.trim(), username.trim(), comment.trim(), ''];
-    for (var i = 0; i < 15; i++) newRow.push('');
-    newRow.push('', '', '');
-    for (var i = 0; i < 2; i++) newRow.push('');
-    newRow.push('', '', '', '', '', '', '', '', '', '', 0, 0, 0, 0, '', '');
-    sheet.appendRow(newRow);
-    rowNum = sheet.getLastRow();
-  }
+  var rowNum = findOrCreateAnswersRow(sheet, sheet_number, username, comment, word);
   
   sheet.getRange(rowNum, 32).setValue(link.trim());
   sheet.getRange(rowNum, 33).setValue(timestamp);
@@ -890,31 +992,12 @@ function saveImageLink(sheet_number, username, comment, link, timestamp) {
   calculatePercentages(sheet, rowNum);
 }
 
-function saveRecordingLink(sheet_number, username, comment, link, timestamp) {
+function saveRecordingLink(sheet_number, username, comment, link, timestamp, word) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName('Answers');
   if (!sheet) return;
   
-  var data = sheet.getDataRange().getValues();
-  var rowNum = -1;
-  for (var r = 1; r < data.length; r++) {
-    if (data[r][0].toString().trim() === sheet_number.trim() && 
-        data[r][1].toString().trim() === username.trim() && 
-        data[r][2].toString().trim() === comment.trim()) {
-      rowNum = r + 1;
-      break;
-    }
-  }
-  
-  if (rowNum === -1) {
-    var newRow = [sheet_number.trim(), username.trim(), comment.trim(), ''];
-    for (var i = 0; i < 15; i++) newRow.push('');
-    newRow.push('', '', '');
-    for (var i = 0; i < 2; i++) newRow.push('');
-    newRow.push('', '', '', '', '', '', '', '', '', '', 0, 0, 0, 0, '', '');
-    sheet.appendRow(newRow);
-    rowNum = sheet.getLastRow();
-  }
+  var rowNum = findOrCreateAnswersRow(sheet, sheet_number, username, comment, word);
   
   sheet.getRange(rowNum, 30).setValue(link.trim());
   sheet.getRange(rowNum, 31).setValue(timestamp);
@@ -925,86 +1008,365 @@ function saveRecordingLink(sheet_number, username, comment, link, timestamp) {
 
 // ------------------- تتبع اكتمال الدروس ودرجات الطالب -------------------
 
-function markLessonCompleted(sheetName, lessonIndex, username) {
+function markLessonCompleted(sheetName, lessonIndex, username, comment, word) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(sheetName);
-  if (sheet) {
-    var row = lessonIndex + 2;
-    sheet.getRange(row, 104).setValue('تم');
-    var comment = sheet.getRange(row, 4).getValue().toString().trim();
-    var answersSheet = ss.getSheetByName('Answers');
-    if (answersSheet && comment) {
-      var answersData = answersSheet.getDataRange().getValues();
-      var answersRowNum = -1;
-      for (var r = 1; r < answersData.length; r++) {
-        if (answersData[r][0].toString().trim() === sheetName.trim() &&
-            answersData[r][1].toString().trim() === username.trim() &&
-            answersData[r][2].toString().trim() === comment.trim()) {
-          answersRowNum = r + 1;
+  var answersSheet = ss.getSheetByName('Answers');
+  if (!answersSheet) return;
+
+  var rowNum = findOrCreateAnswersRow(answersSheet, sheetName, username, comment, word);
+
+  var defaultCount = 0;
+  var questionsSheet = ss.getSheetByName('Questions');
+  if (questionsSheet && comment) {
+    var qData = questionsSheet.getDataRange().getValues();
+    for (var q = 1; q < qData.length; q++) {
+      if (qData[q][3] && qData[q][3].toString().trim() === comment.toString().trim()) {
+        defaultCount = parseInt(qData[q][104]) || 0; // العمود DA (105)
+        break;
+      }
+    }
+  }
+
+  if (rowNum !== -1) {
+    answersSheet.getRange(rowNum, 41).setValue('تم'); // العمود AO (41)
+
+    var currentAp = answersSheet.getRange(rowNum, 42).getValue();
+    if (currentAp === '' || currentAp === null || currentAp === undefined) {
+      answersSheet.getRange(rowNum, 42).setValue(defaultCount); // العمود AP (42)
+    }
+  }
+}
+
+function unmarkLessonCompleted(sheetName, lessonIndex, username, comment, word) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var answersSheet = ss.getSheetByName('Answers');
+  if (!answersSheet) return;
+
+  var rowNum = findAnswersRowOnly(answersSheet, sheetName, username, comment, word);
+
+  if (rowNum !== -1) {
+    answersSheet.getRange(rowNum, 41).setValue('اعادة'); // العمود AO (41)
+  }
+}
+
+function resetToCompleted(sheetName, lessonIndex, username, comment, word) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var answersSheet = ss.getSheetByName('Answers');
+  if (!answersSheet) return;
+
+  var rowNum = findAnswersRowOnly(answersSheet, sheetName, username, comment, word);
+  if (rowNum !== -1) {
+    var currentValue = answersSheet.getRange(rowNum, 41).getValue().toString().trim();
+    if (currentValue === 'اعادة' || currentValue === 'إعادة') {
+      answersSheet.getRange(rowNum, 41).setValue('تم');
+    }
+  }
+}
+
+function decrementRetryCount(sheetName, lessonIndex, username, comment, word) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var answersSheet = ss.getSheetByName('Answers');
+  if (!answersSheet) return;
+
+  var rowNum = findOrCreateAnswersRow(answersSheet, sheetName, username, comment, word);
+
+  var defaultCount = 0;
+  var questionsSheet = ss.getSheetByName('Questions');
+  if (questionsSheet && comment) {
+    var qData = questionsSheet.getDataRange().getValues();
+    for (var q = 1; q < qData.length; q++) {
+      if (qData[q][3] && qData[q][3].toString().trim() === comment.toString().trim()) {
+        defaultCount = parseInt(qData[q][104]) || 0; // العمود DA (105)
+        break;
+      }
+    }
+  }
+
+  if (rowNum !== -1) {
+    var currentAp = answersSheet.getRange(rowNum, 42).getValue();
+    var currentVal = (currentAp !== '' && currentAp !== null && currentAp !== undefined) ? parseInt(currentAp) : defaultCount;
+    if (isNaN(currentVal)) currentVal = defaultCount;
+
+    var newVal = Math.max(0, currentVal - 1);
+    answersSheet.getRange(rowNum, 42).setValue(newVal); // العمود AP (42) في ورقة Answers
+  }
+}
+
+// ------------------- دوال التحكم الإداري (قسم الإدارة) -------------------
+
+function getAdminQuestions() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('Questions');
+  if (!sheet) return [];
+  var fullData = sheet.getDataRange().getValues();
+  var result = [];
+  for (var i = 1; i < fullData.length; i++) {
+    var row = fullData[i];
+    if (row[0] || row[3]) {
+      // أسئلة الفيديو (الأعمدة J إلى CF - index 9 إلى 83 - 15 سؤالاً، كل سؤال 5 أعمدة)
+      var questions = [];
+      var count = 0;
+      for (var j = 9; j < row.length && count < 15; j += 5) {
+        if (row[j] !== undefined && row[j] !== null && row[j] !== '' && row[j + 2]) {
+          var time = parseFloat(row[j].toString().trim()) || 0;
+          var questionImage = row[j + 1] ? formatDriveImageUrl(row[j + 1].toString().trim()) : '';
+          var questionText = row[j + 2] ? row[j + 2].toString().trim() : '';
+          var optionsStr = row[j + 3] ? row[j + 3].toString().trim() : 'نص';
+          var correctAnswer = row[j + 4] ? row[j + 4].toString().trim() : '';
+          questions.push({
+            time: time,
+            image: questionImage,
+            question: questionText,
+            options: optionsStr,
+            correctAnswer: correctAnswer
+          });
+          count++;
+        }
+      }
+
+      // أسئلة الصوت والاستماع (الأعمدة CG إلى CP - index 84 إلى 93 - سؤالان)
+      var audioQuestions = [];
+      count = 0;
+      for (var j = 84; j < row.length && count < 2; j += 5) {
+        if (row[j] !== undefined && row[j] !== null && row[j] !== '' && row[j + 2]) {
+          var time = parseFloat(row[j].toString().trim()) || 0;
+          var questionImage = row[j + 1] ? formatDriveImageUrl(row[j + 1].toString().trim()) : '';
+          var questionText = row[j + 2] ? row[j + 2].toString().trim() : '';
+          var optionsStr = row[j + 3] ? row[j + 3].toString().trim() : 'نص';
+          var correctAnswer = row[j + 4] ? row[j + 4].toString().trim() : '';
+          audioQuestions.push({
+            time: time,
+            image: questionImage,
+            question: questionText,
+            options: optionsStr,
+            correctAnswer: correctAnswer
+          });
+          count++;
+        }
+      }
+
+      result.push({
+        rowIndex: i + 1,
+        word: row[0] ? row[0].toString().trim() : '',
+        rawLinks: row[1] ? row[1].toString().trim() : '',
+        fullSound: row[2] ? row[2].toString().trim() : '',
+        comment: row[3] ? row[3].toString().trim() : '',
+        image: row[4] ? formatDriveImageUrl(row[4].toString().trim()) : '',
+        explainSound: row[5] ? row[5].toString().trim() : '',
+        youtubeUrl: row[6] ? row[6].toString().trim() : '',
+        showResult: row[7] ? row[7].toString().trim() : 'نعم',
+        totalQuestionsCount: row[8] ? (parseInt(row[8].toString().trim()) || 0) : 0,
+        questions: questions,
+        audioQuestions: audioQuestions,
+        instruction: row[94] ? row[94].toString().trim() : '',
+        allowRecording: row[95] ? row[95].toString().trim() : '',
+        maxRecordingTime: row[97] ? (parseInt(row[97].toString().trim()) || 0) : 0,
+        retryCount: row[98] ? (parseInt(row[98].toString().trim()) || 0) : 0,
+        showPrevButton: row[100] ? row[100].toString().trim() : '',
+        allowUpload: row[102] ? row[102].toString().trim() : '',
+        defaultRetryResetCount: row[104] ? (parseInt(row[104].toString().trim()) || 0) : 0,
+        startDate: row[105] ? (row[105] instanceof Date ? Utilities.formatDate(row[105], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[105].toString().trim()) : '',
+        endDate: row[106] ? (row[106] instanceof Date ? Utilities.formatDate(row[106], Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm") : row[106].toString().trim()) : '',
+        expireAfterDays: row[107] ? (parseInt(row[107].toString().trim()) || '') : ''
+      });
+    }
+  }
+  return result;
+}
+
+function saveAdminQuestion(payload) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('Questions');
+  if (!sheet) return { success: false, message: 'ورقة الأسئلة غير موجودة' };
+
+  var data = sheet.getDataRange().getValues();
+  var rowIndex = payload.rowIndex;
+  var targetRow = -1;
+
+  if (rowIndex && rowIndex > 1) {
+    targetRow = rowIndex;
+  }
+
+  if (targetRow === -1 && payload.comment) {
+    var searchComment = payload.comment.toString().trim();
+    if (searchComment) {
+      for (var r = 1; r < data.length; r++) {
+        if (data[r][3] && data[r][3].toString().trim() === searchComment) {
+          targetRow = r + 1;
           break;
         }
       }
-      if (answersRowNum !== -1) {
-        var videoResult = answersSheet.getRange(answersRowNum, 21).getValue();
-        var videoSendCount = answersSheet.getRange(answersRowNum, 35).getValue();
-        var audioResult = answersSheet.getRange(answersRowNum, 26).getValue();
-        var audioSendCount = answersSheet.getRange(answersRowNum, 36).getValue();
-        var fullListenScore = answersSheet.getRange(answersRowNum, 28).getValue();
-        var letterListenScore = answersSheet.getRange(answersRowNum, 29).getValue();
-        var recordingLink = answersSheet.getRange(answersRowNum, 30).getValue();
-        var recordingSendCount = answersSheet.getRange(answersRowNum, 37).getValue();
-        var imageLink = answersSheet.getRange(answersRowNum, 32).getValue();
-        var imageSendCount = answersSheet.getRange(answersRowNum, 38).getValue();
-        var fullResult = answersSheet.getRange(answersRowNum, 39).getDisplayValue();
-        var finalPercent = answersSheet.getRange(answersRowNum, 40).getDisplayValue();
-        
-        sheet.getRange(row, 108).setValue(videoResult);
-        sheet.getRange(row, 109).setValue(videoSendCount);
-        sheet.getRange(row, 110).setValue(audioResult);
-        sheet.getRange(row, 111).setValue(audioSendCount);
-        sheet.getRange(row, 113).setValue(fullListenScore);
-        sheet.getRange(row, 114).setValue(letterListenScore);
-        sheet.getRange(row, 115).setValue(recordingLink);
-        sheet.getRange(row, 116).setValue(recordingSendCount);
-        sheet.getRange(row, 118).setValue(imageLink);
-        sheet.getRange(row, 119).setValue(imageSendCount);
-        sheet.getRange(row, 120).setValue(fullResult);
-        sheet.getRange(row, 121).setValue(finalPercent);
+    }
+  }
+
+  if (targetRow === -1) {
+    var lastOccupiedRow = 1;
+    for (var i = data.length - 1; i >= 0; i--) {
+      var rData = data[i];
+      if ((rData[0] !== undefined && rData[0] !== null && rData[0].toString().trim() !== '') ||
+          (rData[3] !== undefined && rData[3] !== null && rData[3].toString().trim() !== '')) {
+        lastOccupiedRow = i + 1;
+        break;
+      }
+    }
+    targetRow = lastOccupiedRow + 1;
+  }
+
+  var rowValues = [];
+  for (var k = 0; k < 108; k++) {
+    rowValues.push('');
+  }
+
+  if (targetRow <= data.length && data[targetRow - 1]) {
+    var existingRow = data[targetRow - 1];
+    for (var k = 0; k < Math.min(existingRow.length, 108); k++) {
+      rowValues[k] = existingRow[k];
+    }
+  }
+
+  rowValues[0] = payload.word || ''; // A
+  rowValues[1] = payload.rawLinks || ''; // B
+  rowValues[2] = payload.fullSound || ''; // C
+  rowValues[3] = payload.comment || ''; // D
+  rowValues[4] = payload.image || ''; // E
+  rowValues[5] = payload.explainSound || ''; // F
+  rowValues[6] = payload.youtubeUrl || ''; // G
+  rowValues[7] = payload.showResult || 'نعم'; // H
+  rowValues[8] = payload.totalQuestionsCount || 0; // I
+
+  for (var vIdx = 9; vIdx <= 83; vIdx++) {
+    rowValues[vIdx] = '';
+  }
+  if (payload.questions && payload.questions.length > 0) {
+    for (var qIdx = 0; qIdx < Math.min(payload.questions.length, 15); qIdx++) {
+      var q = payload.questions[qIdx];
+      var startIdx = 9 + (qIdx * 5);
+      rowValues[startIdx] = q.time !== undefined ? q.time : 0;
+      rowValues[startIdx + 1] = q.image || '';
+      rowValues[startIdx + 2] = q.question || '';
+      rowValues[startIdx + 3] = q.options || 'نص';
+      rowValues[startIdx + 4] = q.correctAnswer || '';
+    }
+  }
+
+  for (var aIdx = 84; aIdx <= 93; aIdx++) {
+    rowValues[aIdx] = '';
+  }
+  if (payload.audioQuestions && payload.audioQuestions.length > 0) {
+    for (var aIdx = 0; aIdx < Math.min(payload.audioQuestions.length, 2); aIdx++) {
+      var aq = payload.audioQuestions[aIdx];
+      var startIdx = 84 + (aIdx * 5);
+      rowValues[startIdx] = aq.time !== undefined ? aq.time : 0;
+      rowValues[startIdx + 1] = aq.image || '';
+      rowValues[startIdx + 2] = aq.question || '';
+      rowValues[startIdx + 3] = aq.options || 'نص';
+      rowValues[startIdx + 4] = aq.correctAnswer || '';
+    }
+  }
+
+  rowValues[94] = payload.instruction || ''; // CQ (95)
+  rowValues[95] = payload.allowRecording || ''; // CR (96)
+  rowValues[97] = payload.maxRecordingTime || 0; // CT (98)
+  rowValues[98] = payload.retryCount || 0; // CU (99)
+  rowValues[100] = payload.showPrevButton || ''; // CW (101)
+  rowValues[102] = payload.allowUpload || ''; // CY (103)
+  rowValues[104] = payload.defaultRetryResetCount || 0; // DA (105)
+  rowValues[105] = payload.startDate || ''; // DB (106)
+  rowValues[106] = payload.endDate || ''; // DC (107)
+  rowValues[107] = payload.expireAfterDays !== undefined && payload.expireAfterDays !== null ? payload.expireAfterDays : ''; // DD (108)
+
+  sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
+
+  return { success: true, rowIndex: targetRow };
+}
+
+function deleteAdminQuestion(payload) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('Questions');
+  if (!sheet) return { success: false, message: 'ورقة الأسئلة غير موجودة' };
+
+  var comment = payload.comment ? payload.comment.toString().trim() : '';
+  if (comment) {
+    var data = sheet.getDataRange().getValues();
+    for (var r = 1; r < data.length; r++) {
+      if (data[r][3] && data[r][3].toString().trim() === comment) {
+        sheet.deleteRow(r + 1);
+        return { success: true };
       }
     }
   }
-}
 
-function unmarkLessonCompleted(sheetName, lessonIndex) {
-  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(sheetName);
-  if (sheet) {
-    sheet.getRange(lessonIndex + 2, 104).setValue('اعادة');
+  var rowIndex = parseInt(payload.rowIndex);
+  if (!isNaN(rowIndex) && rowIndex > 1) {
+    sheet.deleteRow(rowIndex);
+    return { success: true };
   }
+
+  return { success: false, message: 'لم يتم العثور على الدرس المراد حذفه' };
 }
 
-function resetToCompleted(sheetName, lessonIndex) {
+function getAdminAnswers() {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(sheetName);
-  if (sheet) {
-    var row = lessonIndex + 2;
-    var currentValue = sheet.getRange(row, 104).getValue().toString().trim();
-    if (currentValue === 'اعادة') {
-      sheet.getRange(row, 104).setValue('تم');
+  var sheet = ss.getSheetByName('Answers');
+  if (!sheet) return [];
+  var data = sheet.getDataRange().getValues();
+  var result = [];
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    if (row[0] || row[1] || row[2]) {
+      result.push({
+        rowIndex: i + 1,
+        sheetNumber: row[0] ? row[0].toString().trim() : '',
+        username: row[1] ? row[1].toString().trim() : '',
+        comment: row[2] ? row[2].toString().trim() : '',
+        youtubeUrl: row[3] ? row[3].toString().trim() : '',
+        videoAnswersResult: row[20] ? row[20].toString().trim() : '',
+        audioAnswersResult: row[25] ? row[25].toString().trim() : '',
+        fullAudioScore: row[27] ? row[27].toString().trim() : '0',
+        letterListenScore: row[28] ? row[28].toString().trim() : '0',
+        recordingLink: row[29] ? row[29].toString().trim() : '',
+        imageLink: row[32] ? row[32].toString().trim() : '',
+        audioUploadCount: (row[36] !== undefined && row[36] !== null && row[36] !== '') ? parseInt(row[36].toString().trim()) : 0,
+        imageUploadCount: (row[37] !== undefined && row[37] !== null && row[37] !== '') ? parseInt(row[37].toString().trim()) : 0,
+        finalResult: row[38] ? row[38].toString().trim() : '',
+        completed: row[40] ? row[40].toString().trim() : '',
+        retryResetCount: (row[41] !== undefined && row[41] !== null && row[41] !== '') ? parseInt(row[41].toString().trim()) : null
+      });
     }
   }
+  return result;
 }
 
-function decrementRetryCount(sheetName, lessonIndex) {
+function updateAdminAnswer(payload) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(sheetName);
-  if (sheet) {
-    var row = lessonIndex + 2;
-    var currentCount = sheet.getRange(row, 105).getValue();
-    if (typeof currentCount === 'number' && currentCount > 0) {
-      sheet.getRange(row, 105).setValue(currentCount - 1);
-    }
+  var sheet = ss.getSheetByName('Answers');
+  if (!sheet) return { success: false, message: 'ورقة الإجابات غير موجودة' };
+
+  var rowIndex = payload.rowIndex;
+  if (!rowIndex || rowIndex <= 1) {
+    return { success: false, message: 'رقم الصف غير صحيح' };
   }
+
+  if (payload.sheetNumber !== undefined) sheet.getRange(rowIndex, 1).setValue(payload.sheetNumber);
+  if (payload.username !== undefined) sheet.getRange(rowIndex, 2).setValue(payload.username);
+  if (payload.comment !== undefined) sheet.getRange(rowIndex, 3).setValue(payload.comment);
+  if (payload.audioUploadCount !== undefined && payload.audioUploadCount !== null) {
+    sheet.getRange(rowIndex, 37).setValue(payload.audioUploadCount); // العمود AK (37)
+  }
+  if (payload.imageUploadCount !== undefined && payload.imageUploadCount !== null) {
+    sheet.getRange(rowIndex, 38).setValue(payload.imageUploadCount); // العمود AL (38)
+  }
+  if (payload.finalResult !== undefined) {
+    sheet.getRange(rowIndex, 39).setValue(payload.finalResult); // العمود AM (39)
+  }
+  if (payload.completed !== undefined) {
+    sheet.getRange(rowIndex, 41).setValue(payload.completed); // العمود AO (41)
+  }
+  if (payload.retryResetCount !== undefined && payload.retryResetCount !== null) {
+    sheet.getRange(rowIndex, 42).setValue(payload.retryResetCount); // العمود AP (42)
+  }
+
+  return { success: true };
 }
 
 // ------------------- دوال مساعدة لحساب النسب الكلية والوزن النسبي -------------------
@@ -1136,7 +1498,7 @@ function arabicToWestern(numStr) {
 function getCommentForWord(sheetName, word) {
   try {
     var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    var sheet = ss.getSheetByName(sheetName);
+    var sheet = ss.getSheetByName('Questions');
     if (!sheet) return word;
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {

@@ -15,13 +15,11 @@ import {
   getSavedImageLink,
   uploadImage,
   uploadRecording,
-  saveImageLinkMetadata,
-  saveRecordingLinkMetadata,
   markLessonCompleted
 } from '../api';
 import QuestionModal from './QuestionModal';
 
-// Helper to group Arabic base characters with their combining diacritics
+// Helper to group Arabic base characters with their combining diacritics and elongation (Tatweel/Kashida ـ)
 function groupArabicLetters(word: string): string[] {
   if (!word) return [];
   const parts: string[] = [];
@@ -32,15 +30,27 @@ function groupArabicLetters(word: string): string[] {
     const char = chars[i];
     const code = char.charCodeAt(0);
     // Arabic combining diacritics range from 0x064B to 0x065F, plus 0x0670 (superscript alef)
-    const isDiacritic = (code >= 0x064B && code <= 0x065F) || code === 0x0670;
+    // Tatweel / Kashida (ـ) is 0x0640 or 'ـ'
+    const isDiacriticOrTatweel = (code >= 0x064B && code <= 0x065F) || code === 0x0670 || code === 0x0640 || char === 'ـ';
 
-    if (isDiacritic && current !== '') {
-      current += char;
-    } else {
+    if (isDiacriticOrTatweel) {
       if (current !== '') {
-        parts.push(current);
+        current += char;
+      } else if (parts.length > 0) {
+        parts[parts.length - 1] += char;
+      } else {
+        current = char;
       }
-      current = char;
+    } else {
+      // Base character
+      if (current !== '' && /^[\u0640\u064B-\u065F\u0670ـ]+$/.test(current)) {
+        current += char;
+      } else {
+        if (current !== '') {
+          parts.push(current);
+        }
+        current = char;
+      }
     }
   }
   if (current !== '') {
@@ -60,6 +70,10 @@ function getGoogleDriveFileId(url: string): string | null {
   const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
   if (idMatch && idMatch[1]) return idMatch[1];
 
+  // Match googleusercontent.com/d/FILE_ID
+  const ucMatch = url.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/);
+  if (ucMatch && ucMatch[1]) return ucMatch[1];
+
   return null;
 }
 
@@ -68,9 +82,6 @@ function getPlayableImageUrl(url: string): string {
   if (!url) return '';
   const driveId = getGoogleDriveFileId(url);
   if (driveId) {
-    if (url.includes('drive.google.com/thumbnail')) {
-      return url;
-    }
     return `https://drive.google.com/thumbnail?id=${driveId}&sz=w1200`;
   }
   return url;
@@ -198,12 +209,25 @@ export default function LessonDetail({
   // Active Overlay Question
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [currentQuestionType, setCurrentQuestionType] = useState<'video' | 'audio' | null>(null);
+  const currentQuestionRef = useRef<Question | null>(null);
+  currentQuestionRef.current = currentQuestion;
+
+  const triggeredVideoKeysRef = useRef<Set<string>>(new Set());
+  const triggeredAudioKeysRef = useRef<Set<string>>(new Set());
+
+  const getQuestionId = (q: Question, idx: number) => {
+    const slot = q.slotIndex !== undefined ? q.slotIndex : idx;
+    const qText = (q.question || '').trim();
+    if (qText !== '') return qText;
+    return `q_slot_${slot}_time_${q.time}`;
+  };
 
   // Exit Validation State
   const [exitValidationMsg, setExitValidationMsg] = useState<string | null>(null);
   const [finalCompleting, setFinalCompleting] = useState(false);
 
   const hasLetterSounds = lesson.letterSounds.length > 0 && lesson.letterSounds.some(sound => sound && sound.startsWith('http'));
+  const isReviewOnly = lesson.completed === 'تم' && !isReset;
 
   // Formatter helper
   const formatTime = (sec: number) => {
@@ -219,7 +243,7 @@ export default function LessonDetail({
     const loadScores = async () => {
       try {
         if (lesson.fullSound) {
-          const score = await getFullAudioListeningScore(lesson.comment, student.sheetNumber, student.username);
+          const score = await getFullAudioListeningScore(lesson.comment, student.sheetNumber, student.username, lesson.word);
           setFullAudioScore(score);
           if (score === 100 || isReset) {
             setFullAudioCompleted(true);
@@ -227,7 +251,7 @@ export default function LessonDetail({
           }
         }
         if (hasLetterSounds) {
-          const score = await getLetterListeningScore(lesson.comment, student.sheetNumber, student.username);
+          const score = await getLetterListeningScore(lesson.comment, student.sheetNumber, student.username, lesson.word);
           if (score === 100 || isReset) {
             const completedSet = new Set<number>();
             for (let i = 0; i < groupedLetters.length; i++) completedSet.add(i);
@@ -235,15 +259,19 @@ export default function LessonDetail({
           }
         }
         // Load assignment status
-        const recLink = await getSavedRecordingLink(lesson.comment, student.sheetNumber, student.username);
+        const recLink = await getSavedRecordingLink(lesson.comment, student.sheetNumber, student.username, lesson.word);
         if (recLink) {
           setSavedRecordingLink(recLink);
-          setAudioUploadSuccess(true);
+          if (!isReset) {
+            setAudioUploadSuccess(true);
+          }
         }
-        const imgLink = await getSavedImageLink(lesson.comment, student.sheetNumber, student.username);
+        const imgLink = await getSavedImageLink(lesson.comment, student.sheetNumber, student.username, lesson.word);
         if (imgLink) {
           setSavedImageLink(imgLink);
-          setImageUploadSuccess(true);
+          if (!isReset) {
+            setImageUploadSuccess(true);
+          }
         }
       } catch (err) {
         console.error('Failed to load student scores:', err);
@@ -270,20 +298,12 @@ export default function LessonDetail({
               word: lessonRef.current.word,
               username: studentRef.current.username,
               sheet_number: studentRef.current.sheetNumber,
+              comment: lessonRef.current.comment,
             });
 
             if (uploadResult && uploadResult.success) {
               const driveUrl = uploadResult.link;
               setSavedImageLink(driveUrl);
-
-              await saveImageLinkMetadata({
-                sheet_number: studentRef.current.sheetNumber,
-                username: studentRef.current.username,
-                comment: lessonRef.current.comment,
-                link: driveUrl,
-                timestamp: new Date().toLocaleString(),
-              });
-
               setImageUploadSuccess(true);
             } else {
               throw new Error('فشل الرفع إلى جوجل درايف.');
@@ -308,20 +328,12 @@ export default function LessonDetail({
               word: lessonRef.current.word,
               username: studentRef.current.username,
               sheet_number: studentRef.current.sheetNumber,
+              comment: lessonRef.current.comment,
             });
 
             if (uploadResult && uploadResult.success) {
               const driveUrl = uploadResult.link;
               setSavedRecordingLink(driveUrl);
-
-              await saveRecordingLinkMetadata({
-                sheet_number: studentRef.current.sheetNumber,
-                username: studentRef.current.username,
-                comment: lessonRef.current.comment,
-                link: driveUrl,
-                timestamp: new Date().toLocaleString(),
-              });
-
               setAudioUploadSuccess(true);
             } else {
               throw new Error('فشل الرفع إلى جوجل درايف.');
@@ -383,7 +395,7 @@ export default function LessonDetail({
         videoId: videoId,
         playerVars: {
           controls: 0,
- Rel: 0,
+          rel: 0,
           showinfo: 0,
           disablekb: 1,
           modestbranding: 1,
@@ -468,14 +480,21 @@ export default function LessonDetail({
         setYtProgress(pct);
 
         // Check for interactive questions
-        if (lesson.completed !== 'تم' || isReset) {
-          const question = lesson.questions.find(
-            q => Math.abs(q.time - curr) < 1 && !videoAnsweredRef.current.has(q.question)
-          );
-          if (question) {
-            ytPlayerRef.current.pauseVideo();
-            setCurrentQuestion(question);
-            setCurrentQuestionType('video');
+        if ((lesson.completed !== 'تم' || isReset) && !currentQuestionRef.current) {
+          for (let idx = 0; idx < lesson.questions.length; idx++) {
+            const q = lesson.questions[idx];
+            const qId = getQuestionId(q, idx);
+            const hasContent = (q.question && q.question.trim() !== '') || (q.image && q.image.trim() !== '');
+
+            if (hasContent && !videoAnsweredRef.current.has(qId) && Math.abs(q.time - curr) < 1.2) {
+              if (ytPlayerRef.current?.pauseVideo) {
+                ytPlayerRef.current.pauseVideo();
+              }
+              currentQuestionRef.current = q;
+              setCurrentQuestion(q);
+              setCurrentQuestionType('video');
+              break;
+            }
           }
         }
       }
@@ -532,7 +551,10 @@ export default function LessonDetail({
     const isSeekingAllowed =
       (lesson.completed === 'تم' && !isReset) ||
       (lesson.questions.length === 0) ||
-      (lesson.questions.every(q => videoAnswered.has(q.question)));
+      (lesson.questions.every((q, idx) => {
+        const qId = getQuestionId(q, idx);
+        return videoAnswered.has(qId) || (q.question && videoAnswered.has(q.question.trim()));
+      }));
 
     if (!isSeekingAllowed) {
       setVideoSeekError('تنبيه: لا يمكن تقديم أو تأخير الفيديو في المشاهدة الأولى. يجب مشاهدة الفيديو والإجابة على جميع الأسئلة أولاً ⛔.');
@@ -564,15 +586,20 @@ export default function LessonDetail({
     setYtProgress((curr / dur) * 100);
 
     // Check for interactive questions
-    if (lesson.completed !== 'تم' || isReset) {
-      const question = lesson.questions.find(
-        q => Math.abs(q.time - curr) < 1 && !videoAnsweredRef.current.has(q.question)
-      );
-      if (question) {
-        html5VideoRef.current.pause();
-        setYtPlaying(false);
-        setCurrentQuestion(question);
-        setCurrentQuestionType('video');
+    if ((lesson.completed !== 'تم' || isReset) && !currentQuestionRef.current) {
+      for (let idx = 0; idx < lesson.questions.length; idx++) {
+        const q = lesson.questions[idx];
+        const qId = getQuestionId(q, idx);
+        const hasContent = (q.question && q.question.trim() !== '') || (q.image && q.image.trim() !== '');
+
+        if (hasContent && !videoAnsweredRef.current.has(qId) && Math.abs(q.time - curr) < 1.2) {
+          html5VideoRef.current.pause();
+          setYtPlaying(false);
+          currentQuestionRef.current = q;
+          setCurrentQuestion(q);
+          setCurrentQuestionType('video');
+          break;
+        }
       }
     }
   };
@@ -614,15 +641,22 @@ export default function LessonDetail({
         setAudioTimeStr(`${formatTime(curr)} / ${formatTime(dur)}`);
 
         // Check for questions
-        if (lesson.completed !== 'تم' || isReset) {
-          const question = lesson.audioQuestions.find(
-            q => Math.abs(q.time - curr) < 1 && !audioAnsweredRef.current.has(q.question)
-          );
-          if (question) {
-            audioObjRef.current.pause();
-            setAudioPlaying(false);
-            setCurrentQuestion(question);
-            setCurrentQuestionType('audio');
+        if ((lesson.completed !== 'تم' || isReset) && !currentQuestionRef.current) {
+          for (let idx = 0; idx < lesson.audioQuestions.length; idx++) {
+            const q = lesson.audioQuestions[idx];
+            const qId = getQuestionId(q, idx);
+            const hasContent = (q.question && q.question.trim() !== '') || (q.image && q.image.trim() !== '');
+
+            if (hasContent && !audioAnsweredRef.current.has(qId) && Math.abs(q.time - curr) < 1.2) {
+              if (audioObjRef.current) {
+                audioObjRef.current.pause();
+                setAudioPlaying(false);
+              }
+              currentQuestionRef.current = q;
+              setCurrentQuestion(q);
+              setCurrentQuestionType('audio');
+              break;
+            }
           }
         }
       });
@@ -840,39 +874,52 @@ export default function LessonDetail({
 
   // ------------------- OVERLAY QUESTIONS FEEDBACK -------------------
   const handleQuestionSubmit = async (answer: string, isCorrect: boolean | null) => {
-    const qIndex =
-      currentQuestionType === 'video'
-        ? lesson.questions.findIndex(q => q.question === currentQuestion?.question)
-        : lesson.audioQuestions.findIndex(q => q.question === currentQuestion?.question);
+    if (!currentQuestion) return;
 
     const type = currentQuestionType || 'video';
-    const qText = currentQuestion?.question || '';
+    const qList = type === 'video' ? lesson.questions : lesson.audioQuestions;
+    const qIndex = qList.findIndex(q => q === currentQuestion || (q.time === currentQuestion.time && q.question === currentQuestion.question));
+    const actualIndex = qIndex >= 0 ? qIndex : 0;
+    const targetQ = qList[actualIndex] || currentQuestion;
+    const qSlotIndex = targetQ.slotIndex !== undefined ? targetQ.slotIndex : actualIndex;
+    const qText = (targetQ.question || '').trim();
+    const qId = getQuestionId(targetQ, actualIndex);
 
     // Mark it as answered immediately in refs and state (sync)
     if (type === 'video') {
-      videoAnsweredRef.current.add(qText);
+      videoAnsweredRef.current.add(qId);
+      if (qText) videoAnsweredRef.current.add(qText);
       setVideoAnswered(prev => {
         const next = new Set(prev);
-        next.add(qText);
+        next.add(qId);
+        if (qText) next.add(qText);
         return next;
       });
     } else {
-      audioAnsweredRef.current.add(qText);
+      audioAnsweredRef.current.add(qId);
+      if (qText) audioAnsweredRef.current.add(qText);
       setAudioAnswered(prev => {
         const next = new Set(prev);
-        next.add(qText);
+        next.add(qId);
+        if (qText) next.add(qText);
         return next;
       });
     }
 
     // Close Question Modal and resume media immediately so user doesn't wait
+    currentQuestionRef.current = null;
     setCurrentQuestion(null);
     setCurrentQuestionType(null);
 
-    if (type === 'video' && ytPlayerRef.current) {
-      ytPlayerRef.current.playVideo();
+    if (type === 'video') {
+      if (isYtVideo && ytPlayerRef.current?.playVideo) {
+        ytPlayerRef.current.playVideo();
+      } else if (html5VideoRef.current) {
+        html5VideoRef.current.play().catch(() => {});
+        setYtPlaying(true);
+      }
     } else if (type === 'audio' && audioObjRef.current) {
-      audioObjRef.current.play();
+      audioObjRef.current.play().catch(() => {});
       setAudioPlaying(true);
     }
 
@@ -882,12 +929,12 @@ export default function LessonDetail({
         username: student.username,
         word: lesson.word,
         youtubeUrl: lesson.youtubeUrl,
-        question: qText,
+        question: qText || `سؤال ${type} #${qSlotIndex + 1}`,
         selectedAnswer: answer,
         isCorrect: isCorrect,
         timestamp: new Date().toLocaleString(),
         type: type,
-        questionIndex: qIndex,
+        questionIndex: qSlotIndex,
         comment: lesson.comment,
         explainSound: lesson.explainSound,
       });
@@ -960,7 +1007,6 @@ export default function LessonDetail({
     setAudioUploadError('');
 
     try {
-      // 1. Convert blob to base64 asynchronously using a Promise
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -971,28 +1017,18 @@ export default function LessonDetail({
         reader.readAsDataURL(recordedBlob);
       });
 
-      // 2. Upload file to Google Drive
       const uploadResult = await uploadRecording({
         base64Data: base64,
         mimeType: recordedBlob.type || 'audio/webm',
         word: lesson.word,
         username: student.username,
         sheet_number: student.sheetNumber,
+        comment: lesson.comment,
       });
 
       if (uploadResult && uploadResult.success) {
         const driveUrl = uploadResult.link;
         setSavedRecordingLink(driveUrl);
-        
-        // 3. Save metadata in Sheet
-        await saveRecordingLinkMetadata({
-          sheet_number: student.sheetNumber,
-          username: student.username,
-          comment: lesson.comment,
-          link: driveUrl,
-          timestamp: new Date().toLocaleString(),
-        });
-
         setAudioUploadSuccess(true);
       } else {
         throw new Error('فشل الرفع من الخادم.');
@@ -1014,29 +1050,6 @@ export default function LessonDetail({
     setAudioUploadSuccess(false);
   };
 
-  const handleAudioRetry = () => {
-    if (remainingRetries > 0) {
-      setRemainingRetries(prev => prev - 1);
-      setRecordedAudioUrl(null);
-      setRecordedBlob(null);
-      setAudioUploadSuccess(false);
-      setSavedRecordingLink('');
-    }
-  };
-
-  // ------------------- EXTERNAL POPUP MEDIA CAPTURER -------------------
-  const GITHUB_POPUP_URL = "https://art4calli.github.io/cam/";
-
-  const openCameraPopup = () => {
-    const popupUrl = `${GITHUB_POPUP_URL}?mode=camera&word=${encodeURIComponent(lessonRef.current.word || 'واجب')}&username=${encodeURIComponent(studentRef.current.username || '')}&sheetNumber=${encodeURIComponent(studentRef.current.sheetNumber || '')}`;
-    window.open(popupUrl, "Capture", "width=500,height=650,left=100,top=100");
-  };
-
-  const openMicPopup = () => {
-    const popupUrl = `${GITHUB_POPUP_URL}?mode=mic&word=${encodeURIComponent(lessonRef.current.word || 'واجب')}&username=${encodeURIComponent(studentRef.current.username || '')}&sheetNumber=${encodeURIComponent(studentRef.current.sheetNumber || '')}`;
-    window.open(popupUrl, "Capture", "width=500,height=650,left=100,top=100");
-  };
-
   // ------------------- IN-PAGE CAMERA GRABBER -------------------
   const startCamera = async () => {
     setCapturedImagePreview(null);
@@ -1046,13 +1059,11 @@ export default function LessonDetail({
     try {
       let stream: MediaStream;
       try {
-        // Try back-facing camera first
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: 'environment' } },
           audio: false,
         });
       } catch (inner) {
-        // Fallback to simple default video
         stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: false,
@@ -1082,7 +1093,6 @@ export default function LessonDetail({
     const videoHeight = video.videoHeight || 480;
     const size = Math.min(videoWidth, videoHeight);
     
-    // Crop center square
     const sx = (videoWidth - size) / 2;
     const sy = (videoHeight - size) / 2;
     
@@ -1090,6 +1100,8 @@ export default function LessonDetail({
     canvas.height = size;
     const context = canvas.getContext('2d');
     if (!context) return;
+    
+    // Draw directly without mirror flip so paper/documents are not reversed
     context.drawImage(video, sx, sy, size, size, 0, 0, size, size);
 
     // DRAW WATERMARK
@@ -1097,18 +1109,15 @@ export default function LessonDetail({
       const bannerHeight = Math.max(30, Math.floor(canvas.height * 0.07));
       const fontSize = Math.max(10, Math.floor(bannerHeight * 0.32));
 
-      // Draw dark semi-transparent banner
       context.fillStyle = 'rgba(15, 23, 42, 0.75)';
       context.fillRect(0, canvas.height - bannerHeight, canvas.width, bannerHeight);
 
-      // Text settings
       context.fillStyle = '#FFFFFF';
       context.font = `bold ${fontSize}px 'Cairo', sans-serif`;
       context.textAlign = 'right';
       context.textBaseline = 'middle';
       context.direction = 'rtl';
 
-      // Locale date
       let dateStr = '';
       try {
         dateStr = new Date().toLocaleString('ar-EG', {
@@ -1143,28 +1152,18 @@ export default function LessonDetail({
     setImageUploadError('');
 
     try {
-      // 1. Upload Base64 to Google Drive
       const uploadResult = await uploadImage({
         base64Data: capturedImageBase64,
         mimeType: 'image/jpeg',
         word: lesson.word,
         username: student.username,
         sheet_number: student.sheetNumber,
+        comment: lesson.comment,
       });
 
       if (uploadResult && uploadResult.success) {
         const driveUrl = uploadResult.link;
         setSavedImageLink(driveUrl);
-
-        // 2. Save image metadata in Answers Sheet
-        await saveImageLinkMetadata({
-          sheet_number: student.sheetNumber,
-          username: student.username,
-          comment: lesson.comment,
-          link: driveUrl,
-          timestamp: new Date().toLocaleString(),
-        });
-
         setImageUploadSuccess(true);
       } else {
         throw new Error('فشل الرفع إلى جوجل درايف.');
@@ -1183,7 +1182,6 @@ export default function LessonDetail({
     setUploadingImage(true);
     setImageUploadError('');
 
-    // Pre-process local file: load into canvas and apply watermark!
     const img = new Image();
     img.src = URL.createObjectURL(file);
     img.onload = async () => {
@@ -1211,7 +1209,6 @@ export default function LessonDetail({
         if (!context) return;
         context.drawImage(img, 0, 0, w, h);
 
-        // Apply watermark banner
         const bannerHeight = Math.max(25, Math.floor(canvas.height * 0.06));
         const fontSize = Math.max(9, Math.floor(bannerHeight * 0.30));
 
@@ -1235,27 +1232,18 @@ export default function LessonDetail({
         setCapturedImagePreview(base64);
         const base64Clean = base64.split(',')[1];
 
-        // Upload to Drive
         const uploadResult = await uploadImage({
           base64Data: base64Clean,
           mimeType: 'image/jpeg',
           word: lesson.word,
           username: student.username,
           sheet_number: student.sheetNumber,
+          comment: lesson.comment,
         });
 
         if (uploadResult && uploadResult.success) {
           const driveUrl = uploadResult.link;
           setSavedImageLink(driveUrl);
-
-          await saveImageLinkMetadata({
-            sheet_number: student.sheetNumber,
-            username: student.username,
-            comment: lesson.comment,
-            link: driveUrl,
-            timestamp: new Date().toLocaleString(),
-          });
-
           setImageUploadSuccess(true);
         } else {
           throw new Error('فشل الرفع.');
@@ -1276,43 +1264,87 @@ export default function LessonDetail({
     handleYtPause();
 
     if (lesson.completed === 'تم' && !isReset) {
-      // In review mode, just navigate back directly
+      // In review mode, navigate back directly
       onBack();
       return;
     }
 
     setFinalCompleting(true);
 
-    const checkRecording = lesson.allowRecording === 'نعم' || lesson.allowRecording === '';
-    const checkUpload = lesson.allowUpload === 'نعم' || lesson.allowUpload === '';
+    if (isReset) {
+      // In Reset Mode (الإعادة):
+      // Check if student answered ANY question or uploaded/recorded any file or listened to letters
+      const hasInteracted =
+        videoAnswered.size > 0 ||
+        audioAnswered.size > 0 ||
+        audioUploadSuccess ||
+        imageUploadSuccess ||
+        listenedLetters.size > 0 ||
+        fullAudioCompleted;
 
-    const errors: string[] = [];
+      if (!hasInteracted) {
+        setExitValidationMsg('تنبيه: يمكنك حفظ التقدم والرجوع بعد الإجابة على أي سؤال أو تسجيل/رفع أي واجب.');
+        setFinalCompleting(false);
+        setTimeout(() => setExitValidationMsg(null), 6000);
+        return;
+      }
+    } else {
+      // In First Time Mode: Check strict completeness requirements
+      const checkRecording = lesson.allowRecording === 'نعم';
+      const checkUpload = lesson.allowUpload === 'نعم';
 
-    // 1. Check clickable letters
-    if (hasLetterSounds && listenedLetters.size !== groupedLetters.length) {
-      errors.push('تنبيه: أنت لم تستمع إلى نطق جميع الحروف المكونة للكلمة.');
-    }
+      const errors: string[] = [];
 
-    // 2. Check microphone recording
-    if (checkRecording && !audioUploadSuccess) {
-      errors.push('تنبيه: يرجى تسجيل وإرسال الواجب الصوتي الخاص بك أولاً.');
-    }
+      // Interactive video questions check (only if video URL exists in Column G / index 6)
+      const hasVideo = !!(lesson.youtubeUrl && lesson.youtubeUrl.trim().length > 0);
+      if (hasVideo && lesson.questions && lesson.questions.length > 0) {
+        const answeredCount = lesson.questions.filter((q, idx) => {
+          const qId = getQuestionId(q, idx);
+          return videoAnswered.has(qId) || (q.question && videoAnswered.has(q.question.trim()));
+        }).length;
+        if (answeredCount < lesson.questions.length) {
+          errors.push(`تنبيه: يجب الإجابة على جميع الأسئلة التفاعلية للفيديو أولاً (${answeredCount}/${lesson.questions.length}).`);
+        }
+      }
 
-    // 3. Check photo upload
-    if (checkUpload && !imageUploadSuccess) {
-      errors.push('تنبيه: يرجى التقاط أو رفع الصورة المطلوبة للدرس أولاً.');
-    }
+      // Interactive audio questions check (only if audio URL exists in Column F / index 5)
+      const hasAudio = !!(lesson.explainSound && lesson.explainSound.trim().length > 0);
+      if (hasAudio && lesson.audioQuestions && lesson.audioQuestions.length > 0) {
+        const answeredCount = lesson.audioQuestions.filter((q, idx) => {
+          const qId = getQuestionId(q, idx);
+          return audioAnswered.has(qId) || (q.question && audioAnswered.has(q.question.trim()));
+        }).length;
+        if (answeredCount < lesson.audioQuestions.length) {
+          errors.push(`تنبيه: يجب الإجابة على جميع الأسئلة التفاعلية للصوتي أولاً (${answeredCount}/${lesson.audioQuestions.length}).`);
+        }
+      }
 
-    if (errors.length > 0) {
-      setExitValidationMsg(errors.join(' '));
-      setFinalCompleting(false);
-      setTimeout(() => setExitValidationMsg(null), 6000);
-      return;
+      // Check clickable letters (only if letter sounds exist in Column B / index 1 or Column C / index 2)
+      if (hasLetterSounds && listenedLetters.size !== groupedLetters.length) {
+        errors.push('تنبيه: أنت لم تستمع إلى نطق جميع الحروف المكونة للكلمة.');
+      }
+
+      // Check microphone recording (only if allowRecording === 'نعم' in Column CR / index 95)
+      if (checkRecording && !audioUploadSuccess) {
+        errors.push('تنبيه: يرجى تسجيل وإرسال الواجب الصوتي الخاص بك أولاً.');
+      }
+
+      // Check photo upload (only if allowUpload === 'نعم' in Column CY / index 102)
+      if (checkUpload && !imageUploadSuccess) {
+        errors.push('تنبيه: يرجى التقاط أو رفع الصورة المطلوبة للدرس أولاً.');
+      }
+
+      if (errors.length > 0) {
+        setExitValidationMsg(errors.join(' '));
+        setFinalCompleting(false);
+        setTimeout(() => setExitValidationMsg(null), 6000);
+        return;
+      }
     }
 
     // Perfect! Save everything and submit to sheet
     try {
-      await markLessonCompleted(student.sheetNumber, lessonIndex, student.username);
+      await markLessonCompleted(student.sheetNumber, lessonIndex, student.username, lesson.comment);
       onBack();
     } catch (err) {
       console.error(err);
@@ -1344,7 +1376,7 @@ export default function LessonDetail({
               الكلمة المكتوبة: <span className="text-indigo-600 dark:text-indigo-400 font-extrabold bg-indigo-50/70 dark:bg-indigo-950/40 px-3 py-1 rounded-xl text-sm border border-indigo-100/50 dark:border-indigo-900/50">{lesson.word}</span>
             </p>
           </div>
-          {lesson.completed === 'تم' && !isReset && (
+          {isReviewOnly && (
             <div className="px-4 py-2 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/50 rounded-2xl text-indigo-600 dark:text-indigo-400 text-xs font-extrabold shadow-sm">
               وضع مراجعة الدرس فقط 👁️
             </div>
@@ -1531,6 +1563,7 @@ export default function LessonDetail({
                       <QuestionModal
                         question={currentQuestion}
                         onClose={() => {
+                          currentQuestionRef.current = null;
                           setCurrentQuestion(null);
                           if (isYtVideo) {
                             if (ytPlayerRef.current) {
@@ -1561,6 +1594,7 @@ export default function LessonDetail({
                               setYtPlaying(true);
                             }
                           }
+                          currentQuestionRef.current = null;
                           setCurrentQuestion(null);
                           setCurrentQuestionType(null);
                         }}
@@ -1695,7 +1729,6 @@ export default function LessonDetail({
 
                   {/* Word Box */}
                   <div className="px-8 py-8 bg-[#fffbf4] dark:bg-slate-950 border border-amber-100/50 dark:border-slate-800/80 rounded-3xl relative min-w-[240px] mb-4 w-full shadow-inner transition-colors duration-300">
-                    {/* Beautiful natural complete Arabic word display */}
                     <div className="text-center py-6 select-none w-full" dir="rtl">
                       <div className="inline-block text-6xl md:text-8xl font-bold tracking-normal leading-relaxed text-slate-800 dark:text-slate-100 bg-[#faf6ed] dark:bg-slate-900 px-12 py-6 rounded-3xl border border-amber-100/40 dark:border-slate-800/60 shadow-sm whitespace-nowrap transition-colors duration-300">
                         {groupedLetters.map((char, index) => {
@@ -1721,7 +1754,6 @@ export default function LessonDetail({
                       </div>
                     </div>
 
-                    {/* Highly intuitive visual guides below the word showing progress */}
                     <div className="flex flex-row-reverse items-center justify-center gap-3 mt-4" dir="rtl">
                       {groupedLetters.map((char, index) => {
                         const isListened = listenedLetters.has(index);
@@ -1741,7 +1773,6 @@ export default function LessonDetail({
                       })}
                     </div>
 
-                    {/* Feedbacks */}
                     {letterMsg && (
                       <p className="text-xs text-amber-700 font-extrabold mt-5 leading-relaxed max-w-xs mx-auto bg-amber-50/50 px-4 py-2 rounded-2xl border border-amber-100/40">
                         {letterMsg}
@@ -1749,7 +1780,6 @@ export default function LessonDetail({
                     )}
                   </div>
 
-                  {/* Volume Control */}
                   <div className="flex items-center gap-3 bg-amber-50/30 px-4 py-2.5 rounded-xl border border-amber-100/40 w-full max-w-xs justify-center">
                     <span className="text-[11px] text-slate-500 font-bold">حجم صوت الحروف:</span>
                     <Volume2 className="w-3.5 h-3.5 text-slate-500" />
@@ -1785,114 +1815,129 @@ export default function LessonDetail({
                   سجل صوتك أثناء قراءة الكلمة المستهدفة ({lesson.word}) أو اختر ملفاً صوتياً جاهزاً لإرساله وتصحيحه.
                 </p>
 
-                {/* Recorder Console Dashboard */}
-                <div className="w-full bg-slate-50 dark:bg-slate-950 border border-sky-100/80 dark:border-slate-850 rounded-2xl p-4 flex flex-col items-center mb-4 shadow-inner">
-                  {/* Status Indicator / Loader */}
-                  {uploadingAudio ? (
-                    <div className="flex flex-col items-center gap-2 py-4">
-                      <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin" />
-                      <span className="text-xs text-indigo-500 font-extrabold">جاري الرفع والتوثيق...</span>
-                    </div>
-                  ) : (
-                    <div className="h-12 flex items-center justify-center text-slate-500 dark:text-slate-400 text-xs mb-3 font-bold">
-                      {recording ? (
-                        <div className="flex items-center gap-1.5 h-12">
-                          <span className="w-1.5 h-6 bg-red-500 rounded-full animate-bounce" />
-                          <span className="w-1.5 h-10 bg-red-500 rounded-full animate-bounce [animation-delay:0.15s]" />
-                          <span className="w-1.5 h-12 bg-red-500 rounded-full animate-bounce [animation-delay:0.3s]" />
-                          <span className="w-1.5 h-7 bg-red-500 rounded-full animate-bounce [animation-delay:0.45s]" />
-                          <span className="w-1.5 h-4 bg-red-500 rounded-full animate-bounce [animation-delay:0.6s]" />
-                        </div>
-                      ) : recordedAudioUrl ? (
-                        'تم تسجيل وتأكيد الواجب الصوتي!'
-                      ) : (
-                        'الميكروفون جاهز لبدء التسجيل'
-                      )}
-                    </div>
-                  )}
-
-                  {/* Timer Display when recording */}
-                  {recording && (
-                    <span className="text-red-500 text-xs font-extrabold block mb-4 animate-pulse">
-                      جاري التسجيل: {formatTime(recordingSeconds)} ثانية
+                {/* Lock Badge if audio is already submitted & saved */}
+                {audioUploadSuccess || isReviewOnly ? (
+                  <div className="w-full p-5 bg-emerald-50/90 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 rounded-2xl flex flex-col items-center justify-center gap-2 shadow-sm">
+                    <CheckCircle2 className="w-7 h-7 text-emerald-500" />
+                    <span className="text-xs text-emerald-800 dark:text-emerald-300 font-extrabold">
+                      تم قفل وإرسال الواجب الصوتي بنجاح! 🔒
                     </span>
-                  )}
-
-                  {/* Local Preview Audio Player */}
-                  {recordedAudioUrl && !recording && !uploadingAudio && (
-                    <audio src={recordedAudioUrl} controls className="w-full max-w-[280px] mb-4 accent-indigo-500" />
-                  )}
-
-                  {/* Controls Row */}
-                  {!uploadingAudio && (
-                    <div className="flex items-center justify-center gap-3 flex-wrap">
-                      {recording ? (
-                        <button
-                          onClick={() => stopRecording()}
-                          className="px-5 py-3 bg-amber-400 hover:bg-amber-500 text-slate-900 border border-amber-500/20 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-400/20"
-                        >
-                          <span>إيقاف التسجيل ومعاينة ⏹️</span>
-                        </button>
-                      ) : recordedAudioUrl && !audioUploadSuccess ? (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={handleUploadAudio}
-                            disabled={uploadingAudio}
-                            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/15"
-                          >
-                            <span>إرسال وموافق 🟢</span>
-                          </button>
-                          {remainingRetries > 0 && (
-                            <button
-                              onClick={handleAudioRetry}
-                              className="px-4 py-2.5 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-sky-100 dark:border-slate-800 font-extrabold rounded-xl transition-all flex items-center gap-1 text-xs cursor-pointer shadow-sm"
-                            >
-                              <RefreshCw className="w-3.5 h-3.5" />
-                              <span>إعادة ({remainingRetries})</span>
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <>
-                          <button
-                            onClick={startRecording}
-                            className="px-5 py-3 bg-red-500 hover:bg-red-600 text-white font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-red-500/15"
-                          >
-                            <span className="w-2 bg-white h-2 rounded-full animate-ping" />
-                            <span>ابدأ تسجيل الواجب الصوتي 🎙️</span>
-                          </button>
-                          {/* Custom local file picker */}
-                          <label className="px-4 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-sm">
-                            <Upload className="w-4 h-4 text-indigo-500" />
-                            <span>اختيار ملف</span>
-                            <input
-                              type="file"
-                              accept="audio/*"
-                              onChange={handleManualAudioUpload}
-                              className="hidden"
-                            />
-                          </label>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Upload Status alerts */}
-                {audioUploadSuccess && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs flex items-center gap-2 w-full justify-center shadow-sm font-bold"
-                  >
-                    <CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" />
-                    <span>تم إرسال تسليم واجبك الصوتي بنجاح! 🎉</span>
                     {savedRecordingLink && (
-                      <a href={savedRecordingLink} target="_blank" className="text-indigo-600 underline font-extrabold mr-1.5 flex items-center gap-0.5">
-                        استماع
+                      <a
+                        href={savedRecordingLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-indigo-600 dark:text-indigo-400 underline font-extrabold mt-1 hover:text-indigo-800"
+                      >
+                        استماع للتسجيل المرسل
                       </a>
                     )}
-                  </motion.div>
+                    {isReset && (
+                      <button
+                        onClick={() => {
+                          setAudioUploadSuccess(false);
+                          setRecordedAudioUrl(null);
+                          setRecordedBlob(null);
+                        }}
+                        className="mt-2 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold cursor-pointer transition-all active:scale-95 shadow-sm"
+                      >
+                        إعادة التسجيل / رفع جديد 🔄
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  /* Recorder Console Dashboard */
+                  <div className="w-full bg-slate-50 dark:bg-slate-950 border border-sky-100/80 dark:border-slate-850 rounded-2xl p-4 flex flex-col items-center mb-4 shadow-inner">
+                    {/* Status Indicator / Loader */}
+                    {uploadingAudio ? (
+                      <div className="flex flex-col items-center gap-2 py-4">
+                        <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin" />
+                        <span className="text-xs text-indigo-500 font-extrabold">جاري الرفع والتوثيق...</span>
+                      </div>
+                    ) : (
+                      <div className="h-12 flex items-center justify-center text-slate-500 dark:text-slate-400 text-xs mb-3 font-bold">
+                        {recording ? (
+                          <div className="flex items-center gap-1.5 h-12">
+                            <span className="w-1.5 h-6 bg-red-500 rounded-full animate-bounce" />
+                            <span className="w-1.5 h-10 bg-red-500 rounded-full animate-bounce [animation-delay:0.15s]" />
+                            <span className="w-1.5 h-12 bg-red-500 rounded-full animate-bounce [animation-delay:0.3s]" />
+                            <span className="w-1.5 h-7 bg-red-500 rounded-full animate-bounce [animation-delay:0.45s]" />
+                            <span className="w-1.5 h-4 bg-red-500 rounded-full animate-bounce [animation-delay:0.6s]" />
+                          </div>
+                        ) : recordedAudioUrl ? (
+                          'معاينة التسجيل قبل الإرسال'
+                        ) : (
+                          'الميكروفون جاهز لبدء التسجيل'
+                        )}
+                      </div>
+                    )}
+
+                    {/* Timer Display when recording */}
+                    {recording && (
+                      <span className="text-red-500 text-xs font-extrabold block mb-4 animate-pulse">
+                        جاري التسجيل: {formatTime(recordingSeconds)} ثانية
+                      </span>
+                    )}
+
+                    {/* Local Preview Audio Player */}
+                    {recordedAudioUrl && !recording && !uploadingAudio && (
+                      <audio src={recordedAudioUrl} controls className="w-full max-w-[280px] mb-4 accent-indigo-500" />
+                    )}
+
+                    {/* Controls Row */}
+                    {!uploadingAudio && (
+                      <div className="flex items-center justify-center gap-3 flex-wrap">
+                        {recording ? (
+                          <button
+                            onClick={() => stopRecording()}
+                            className="px-5 py-3 bg-amber-400 hover:bg-amber-500 text-slate-900 border border-amber-500/20 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-400/20"
+                          >
+                            <span>إيقاف التسجيل ومعاينة ⏹️</span>
+                          </button>
+                        ) : recordedAudioUrl ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={handleUploadAudio}
+                              disabled={uploadingAudio}
+                              className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/15"
+                            >
+                              <span>تأكيد وإرسال الواجب 🟢</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setRecordedAudioUrl(null);
+                                setRecordedBlob(null);
+                              }}
+                              className="px-3 py-2.5 bg-white dark:bg-slate-900 text-slate-600 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-extrabold"
+                            >
+                              إلغاء
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              onClick={startRecording}
+                              className="px-5 py-3 bg-red-500 hover:bg-red-600 text-white font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-red-500/15"
+                            >
+                              <span className="w-2 bg-white h-2 rounded-full animate-ping" />
+                              <span>ابدأ تسجيل الواجب الصوتي 🎙️</span>
+                            </button>
+                            {/* Custom local file picker */}
+                            <label className="px-4 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-sm">
+                              <Upload className="w-4 h-4 text-indigo-500" />
+                              <span>اختيار ملف</span>
+                              <input
+                                type="file"
+                                accept="audio/*"
+                                onChange={handleManualAudioUpload}
+                                className="hidden"
+                              />
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {audioUploadError && (
@@ -1912,117 +1957,132 @@ export default function LessonDetail({
                   التقط صورة بكاميرا جهازك الآن مع علامة مائية ذكية، أو اختر صورة جاهزة لإرسالها.
                 </p>
 
-                {/* Camera Console Dashboard */}
-                <div className="w-full bg-slate-50 dark:bg-slate-950 border border-sky-100/80 dark:border-slate-850 rounded-2xl p-4 flex flex-col items-center mb-4 min-h-[160px] justify-center shadow-inner">
-                  {/* Status Indicator / Loader */}
-                  {uploadingImage ? (
-                    <div className="flex flex-col items-center gap-2 py-4">
-                      <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin" />
-                      <span className="text-xs text-indigo-500 font-extrabold">جاري الرفع والتوثيق...</span>
-                    </div>
-                  ) : (
-                    <div className="h-12 flex items-center justify-center text-slate-500 dark:text-slate-400 text-xs mb-3 font-bold">
-                      {cameraActive ? 'الكاميرا تلتقط مباشرة...' : capturedImagePreview ? 'تم التقاط صورة الواجب!' : 'الكاميرا مستعدة للبدء'}
-                    </div>
-                  )}
-
-                  {/* Video Stream Preview */}
-                  {cameraActive && !uploadingImage && (
-                    <div className="relative aspect-square w-full max-w-[480px] rounded-2xl overflow-hidden border-2 border-indigo-500 bg-slate-900 mb-4 shadow-xl">
-                      <video
-                        ref={videoStreamRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="w-full h-full object-cover -scale-x-100" // Mirror view
-                      />
-                    </div>
-                  )}
-
-                  {/* Captured Photo Preview */}
-                  {capturedImagePreview && !cameraActive && !uploadingImage && (
-                    <div className="relative aspect-square w-full max-w-[480px] rounded-2xl overflow-hidden border-2 border-emerald-500 bg-slate-900 mb-4 shadow-xl">
-                      <img src={capturedImagePreview} className="w-full h-full object-cover" alt="Captured" />
-                    </div>
-                  )}
-
-                  {/* Control Actions */}
-                  {!uploadingImage && (
-                    <div className="flex items-center justify-center gap-3 flex-wrap">
-                      {cameraActive ? (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={capturePhoto}
-                            className="px-5 py-3 bg-amber-400 hover:bg-amber-500 text-slate-900 border border-amber-500/20 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-400/20"
-                          >
-                            <span>قص والتقاط الصورة 📸</span>
-                          </button>
-                          <button
-                            onClick={stopCamera}
-                            className="px-4 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 rounded-xl text-xs font-extrabold cursor-pointer shadow-sm"
-                          >
-                            إلغاء
-                          </button>
-                        </div>
-                      ) : capturedImagePreview && !imageUploadSuccess ? (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={handleUploadPhoto}
-                            disabled={uploadingImage}
-                            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/15"
-                          >
-                            {uploadingImage ? 'جاري الرفع...' : 'إرسال وموافق 🟢'}
-                          </button>
-                          <button
-                            onClick={() => {
-                              setCapturedImagePreview(null);
-                              setCapturedImageBase64(null);
-                              startCamera();
-                            }}
-                            className="px-4 py-2.5 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 font-extrabold rounded-xl transition-all text-xs cursor-pointer shadow-sm"
-                          >
-                            إعادة تصوير 🔄
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <button
-                            onClick={startCamera}
-                            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-indigo-600/15"
-                          >
-                            <span>التقاط بالكاميرا 📷</span>
-                          </button>
-                          <label className="px-4 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-sm">
-                            <Upload className="w-4 h-4 text-indigo-500" />
-                            <span>اختيار ملف</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={handleManualImageUpload}
-                              className="hidden"
-                            />
-                          </label>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Upload status */}
-                {imageUploadSuccess && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs flex items-center gap-2 w-full justify-center shadow-sm font-bold"
-                  >
-                    <CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" />
-                    <span>تم إرسال الصورة وتوثيقها بنجاح! 🎉</span>
+                {/* Lock Badge if image is already submitted & saved */}
+                {imageUploadSuccess || isReviewOnly ? (
+                  <div className="w-full p-5 bg-emerald-50/90 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 rounded-2xl flex flex-col items-center justify-center gap-2 shadow-sm">
+                    <CheckCircle2 className="w-7 h-7 text-emerald-500" />
+                    <span className="text-xs text-emerald-800 dark:text-emerald-300 font-extrabold">
+                      تم قفل وإرسال صورة الواجب بنجاح! 🔒
+                    </span>
                     {savedImageLink && (
-                      <a href={savedImageLink} target="_blank" className="text-indigo-600 underline font-extrabold mr-1.5 flex items-center gap-0.5">
-                        معاينة
+                      <a
+                        href={savedImageLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-indigo-600 dark:text-indigo-400 underline font-extrabold mt-1 hover:text-indigo-800"
+                      >
+                        معاينة الصورة المرسلة
                       </a>
                     )}
-                  </motion.div>
+                    {isReset && (
+                      <button
+                        onClick={() => {
+                          setImageUploadSuccess(false);
+                          setCapturedImagePreview(null);
+                          setCapturedImageBase64(null);
+                        }}
+                        className="mt-2 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold cursor-pointer transition-all active:scale-95 shadow-sm"
+                      >
+                        إعادة التقاط / رفع جديد 🔄
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  /* Camera Console Dashboard */
+                  <div className="w-full bg-slate-50 dark:bg-slate-950 border border-sky-100/80 dark:border-slate-850 rounded-2xl p-4 flex flex-col items-center mb-4 min-h-[160px] justify-center shadow-inner">
+                    {/* Status Indicator / Loader */}
+                    {uploadingImage ? (
+                      <div className="flex flex-col items-center gap-2 py-4">
+                        <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin" />
+                        <span className="text-xs text-indigo-500 font-extrabold">جاري الرفع والتوثيق...</span>
+                      </div>
+                    ) : (
+                      <div className="h-12 flex items-center justify-center text-slate-500 dark:text-slate-400 text-xs mb-3 font-bold">
+                        {cameraActive ? 'الكاميرا تلتقط مباشرة...' : capturedImagePreview ? 'تم التقاط صورة الواجب!' : 'الكاميرا مستعدة للبدء'}
+                      </div>
+                    )}
+
+                    {/* Video Stream Preview */}
+                    {cameraActive && !uploadingImage && (
+                      <div className="relative aspect-square w-full max-w-[480px] rounded-2xl overflow-hidden border-2 border-indigo-500 bg-slate-900 mb-4 shadow-xl">
+                        <video
+                          ref={videoStreamRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )}
+
+                    {/* Captured Photo Preview */}
+                    {capturedImagePreview && !cameraActive && !uploadingImage && (
+                      <div className="relative aspect-square w-full max-w-[480px] rounded-2xl overflow-hidden border-2 border-emerald-500 bg-slate-900 mb-4 shadow-xl">
+                        <img src={capturedImagePreview} className="w-full h-full object-cover" alt="Captured" />
+                      </div>
+                    )}
+
+                    {/* Control Actions */}
+                    {!uploadingImage && (
+                      <div className="flex items-center justify-center gap-3 flex-wrap">
+                        {cameraActive ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={capturePhoto}
+                              className="px-5 py-3 bg-amber-400 hover:bg-amber-500 text-slate-900 border border-amber-500/20 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-400/20"
+                            >
+                              <span>قص والتقاط الصورة 📸</span>
+                            </button>
+                            <button
+                              onClick={stopCamera}
+                              className="px-4 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 rounded-xl text-xs font-extrabold cursor-pointer shadow-sm"
+                            >
+                              إلغاء
+                            </button>
+                          </div>
+                        ) : capturedImagePreview ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={handleUploadPhoto}
+                              disabled={uploadingImage}
+                              className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/15"
+                            >
+                              <span>تأكيد وإرسال الصورة 🟢</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setCapturedImagePreview(null);
+                                setCapturedImageBase64(null);
+                                startCamera();
+                              }}
+                              className="px-4 py-2.5 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 font-extrabold rounded-xl transition-all text-xs cursor-pointer shadow-sm"
+                            >
+                              إعادة تصوير 🔄
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              onClick={startCamera}
+                              className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-indigo-600/15"
+                            >
+                              <span>التقاط بالكاميرا 📷</span>
+                            </button>
+                            <label className="px-4 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-sm">
+                              <Upload className="w-4 h-4 text-indigo-500" />
+                              <span>اختيار ملف</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleManualImageUpload}
+                                className="hidden"
+                              />
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {imageUploadError && (
@@ -2065,6 +2125,7 @@ export default function LessonDetail({
           <QuestionModal
             question={currentQuestion}
             onClose={() => {
+              currentQuestionRef.current = null;
               setCurrentQuestion(null);
               if (audioObjRef.current) {
                 audioObjRef.current.play();
@@ -2082,10 +2143,38 @@ export default function LessonDetail({
                 audioObjRef.current.play();
                 setAudioPlaying(true);
               }
+              currentQuestionRef.current = null;
               setCurrentQuestion(null);
               setCurrentQuestionType(null);
             }}
           />
+        )}
+      </AnimatePresence>
+
+      {/* SAVING PROGRESS OVERLAY (NON-CLICKABLE) */}
+      <AnimatePresence>
+        {finalCompleting && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md select-none pointer-events-auto" dir="rtl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white dark:bg-slate-900 border border-amber-200 dark:border-slate-800 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center flex flex-col items-center gap-4"
+            >
+              <div className="relative">
+                <div className="w-16 h-16 border-4 border-amber-200 dark:border-slate-800 border-t-amber-500 rounded-full animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center text-xl">
+                  ⏳
+                </div>
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">جاري حفظ التقدم وتحديث السجل</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-2 leading-relaxed">
+                  يرجى الانتظار دون إغلاق الصفحة حتى تكتمل العملية بنجاح وتحديث قائمة الدروس...
+                </p>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

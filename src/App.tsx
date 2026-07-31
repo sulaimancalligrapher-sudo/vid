@@ -7,7 +7,8 @@ import LessonList from './components/LessonList';
 import LessonDetail from './components/LessonDetail';
 import SettingsPanel from './components/SettingsPanel';
 import AdminPasswordModal from './components/AdminPasswordModal';
-import { Settings, RefreshCw, BookOpen, Sparkles, Database, Sun, Moon, Lock } from 'lucide-react';
+import AdminPanel from './components/AdminPanel';
+import { Settings, RefreshCw, BookOpen, Sparkles, Database, Sun, Moon, Lock, ShieldCheck } from 'lucide-react';
 
 export default function App() {
   const [webAppUrl, setWebAppUrl] = useState(getWebAppUrl());
@@ -15,6 +16,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false); // Do not auto-open to remain fully locked for students
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => localStorage.getItem('isAdminUnlocked') === 'true');
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [showFirstPassModal, setShowFirstPassModal] = useState(false);
   const [showSecondPassModal, setShowSecondPassModal] = useState(false);
   
@@ -51,11 +53,12 @@ export default function App() {
     }
   }, [webAppUrl, isConfigured]);
 
-  const loadStudentLessons = async (nameOfSheet: string) => {
+  const loadStudentLessons = async (nameOfSheet: string, userOverride?: string) => {
     setLoadingLessons(true);
     setError(null);
     try {
-      const data = await fetchLessons(nameOfSheet);
+      const activeUser = userOverride || student?.username || localStorage.getItem('loggedInUsername') || '';
+      const data = await fetchLessons(nameOfSheet, activeUser);
       setLessons(data);
     } catch (err: any) {
       console.error(err);
@@ -68,7 +71,7 @@ export default function App() {
   const handleLoginSuccess = (username: string, sheetNum: string, returnedSheetName: string) => {
     setStudent({ username, sheetNumber: sheetNum });
     setSheetName(returnedSheetName || sheetNum);
-    loadStudentLessons(returnedSheetName || sheetNum);
+    loadStudentLessons(returnedSheetName || sheetNum, username);
   };
 
   const handleLogout = () => {
@@ -161,16 +164,25 @@ export default function App() {
             {isAdminUnlocked && (
               <>
                 <button
+                  onClick={() => setIsAdminPanelOpen(true)}
+                  className="px-3.5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 rounded-2xl cursor-pointer transition-all active:scale-95 shadow-md shadow-amber-500/20 flex items-center gap-1.5 text-xs font-black"
+                  title="فتح قسم التحكم الإداري"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>قسم الإدارة</span>
+                </button>
+                <button
                   onClick={() => {
                     setIsAdminUnlocked(false);
                     setIsSettingsOpen(false);
+                    setIsAdminPanelOpen(false);
                     localStorage.removeItem('isAdminUnlocked');
                   }}
                   className="px-3 py-2.5 bg-rose-50/50 dark:bg-rose-950/20 hover:bg-rose-100/80 dark:hover:bg-rose-950/40 border border-rose-100/60 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 rounded-2xl cursor-pointer transition-all active:scale-95 shadow-sm flex items-center gap-1.5 text-xs font-bold"
                   title="الخروج من وضع الإدارة"
                 >
                   <Lock className="w-4 h-4" />
-                  <span>خروج الإدارة</span>
+                  <span>خروج</span>
                 </button>
                 <button
                   onClick={() => setShowSecondPassModal(true)}
@@ -274,6 +286,10 @@ export default function App() {
 
       {/* Settings Panel Overlay */}
       <AnimatePresence>
+        {isAdminPanelOpen && (
+          <AdminPanel onClose={() => setIsAdminPanelOpen(false)} />
+        )}
+
         {isSettingsOpen && (
           <SettingsPanel
             onClose={() => setIsSettingsOpen(false)}

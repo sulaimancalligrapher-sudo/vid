@@ -1,7 +1,7 @@
 import React from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { WordData } from '../types';
-import { LogOut, BookOpen, CheckCircle, RefreshCw, Star, PlayCircle, Lock } from 'lucide-react';
+import { LogOut, BookOpen, CheckCircle, RefreshCw, Star, PlayCircle, Lock, Eye, EyeOff } from 'lucide-react';
 import { decrementRetryCount, unmarkLessonCompleted } from '../api';
 
 interface LessonListProps {
@@ -24,7 +24,113 @@ export default function LessonList({
   loading,
 }: LessonListProps) {
 
+  const [hideCompleted, setHideCompleted] = React.useState<boolean>(true);
   const [expandedComments, setExpandedComments] = React.useState<Record<number, boolean>>({});
+  const [resetModalLesson, setResetModalLesson] = React.useState<{ index: number; lesson: WordData } | null>(null);
+  const [resetting, setResetting] = React.useState(false);
+  const [resetError, setResetError] = React.useState<string | null>(null);
+
+  const completedCount = React.useMemo(() => {
+    return lessons.filter(l => l.completed === 'تم').length;
+  }, [lessons]);
+
+  const lessonsWithIndex = React.useMemo(() => {
+    return lessons.map((lesson, originalIndex) => ({
+      ...lesson,
+      originalIndex,
+    }));
+  }, [lessons]);
+
+  const parseFlexibleDate = (dateStr: string | undefined, isEnd = false): Date | null => {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+    let cleanStr = dateStr.trim();
+    if (!cleanStr) return null;
+    
+    // Convert Arabic/Eastern digits to Western digits
+    cleanStr = cleanStr.replace(/[٠١٢٣٤٥٦٧٨٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+
+    // 1. Direct native JavaScript Date parsing
+    const directDate = new Date(cleanStr);
+    if (!isNaN(directDate.getTime())) {
+      // If time was omitted (e.g. "2026-08-01"), set to start or end of day
+      if (!cleanStr.includes(':') && !cleanStr.includes('T') && !cleanStr.includes(' ')) {
+        if (isEnd) {
+          directDate.setHours(23, 59, 59, 999);
+        } else {
+          directDate.setHours(0, 0, 0, 0);
+        }
+      }
+      return directDate;
+    }
+
+    // 2. Match YYYY-MM-DD or YYYY/MM/DD
+    const isoMatch = cleanStr.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+    if (isoMatch) {
+      const y = parseInt(isoMatch[1], 10);
+      const m = parseInt(isoMatch[2], 10) - 1;
+      const d = parseInt(isoMatch[3], 10);
+      const h = isoMatch[4] !== undefined ? parseInt(isoMatch[4], 10) : (isEnd ? 23 : 0);
+      const mi = isoMatch[5] !== undefined ? parseInt(isoMatch[5], 10) : (isEnd ? 59 : 0);
+      const s = isoMatch[6] !== undefined ? parseInt(isoMatch[6], 10) : (isEnd ? 59 : 0);
+      return new Date(y, m, d, h, mi, s);
+    }
+
+    // 3. Match DD/MM/YYYY or DD-MM-YYYY
+    const dmyMatch = cleanStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+    if (dmyMatch) {
+      const d = parseInt(dmyMatch[1], 10);
+      const m = parseInt(dmyMatch[2], 10) - 1;
+      const y = parseInt(dmyMatch[3], 10);
+      const h = dmyMatch[4] !== undefined ? parseInt(dmyMatch[4], 10) : (isEnd ? 23 : 0);
+      const mi = dmyMatch[5] !== undefined ? parseInt(dmyMatch[5], 10) : (isEnd ? 59 : 0);
+      const s = dmyMatch[6] !== undefined ? parseInt(dmyMatch[6], 10) : (isEnd ? 59 : 0);
+      return new Date(y, m, d, h, mi, s);
+    }
+
+    return null;
+  };
+
+  const isLessonVisibleByDate = (l: WordData): boolean => {
+    const hasDays = l.expireAfterDays !== undefined && l.expireAfterDays !== null && l.expireAfterDays !== '';
+    if (!l.startDate && !l.endDate && !hasDays) return true;
+    const now = new Date();
+
+    const startDate = parseFlexibleDate(l.startDate, false);
+    if (startDate && now < startDate) {
+      return false; // Lesson has not reached its start date yet
+    }
+
+    // Check explicit endDate
+    const endDate = parseFlexibleDate(l.endDate, true);
+    if (endDate && now > endDate) {
+      return false; // Lesson has expired past its explicit end date
+    }
+
+    // Check expireAfterDays (number of days after startDate)
+    if (startDate && hasDays) {
+      const days = typeof l.expireAfterDays === 'number' ? l.expireAfterDays : parseFloat(String(l.expireAfterDays));
+      if (!isNaN(days) && days > 0) {
+        const calculatedExpiry = new Date(startDate.getTime() + days * 24 * 60 * 60 * 1000);
+        if (now > calculatedExpiry) {
+          return false; // Lesson expired based on days limit
+        }
+      }
+    }
+
+    return true;
+  };
+
+  const displayedLessons = React.useMemo(() => {
+    return lessonsWithIndex.filter(l => {
+      if (!isLessonVisibleByDate(l)) {
+        return false;
+      }
+      if (hideCompleted && l.completed === 'تم') {
+        return false;
+      }
+      return true;
+    });
+  }, [lessonsWithIndex, hideCompleted]);
 
   const toggleComment = (e: React.MouseEvent, idx: number) => {
     e.stopPropagation(); // Avoid triggering onSelectLesson
@@ -52,17 +158,28 @@ export default function LessonList({
     return !!expandedComments[idx];
   };
 
-  const handleResetLesson = async (e: React.MouseEvent, index: number, lesson: WordData) => {
-    e.stopPropagation(); // Prevent opening lesson immediately
-    if (confirm('هل أنت متأكد من رغبتك في إعادة المحاولة لهذا الدرس؟ سيؤدي ذلك إلى استهلاك محاولة واحدة من محاولاتك المتاحة.')) {
-      try {
-        await decrementRetryCount(sheetNumber, index);
-        await unmarkLessonCompleted(sheetNumber, index);
-        onRefresh(); // Refresh parent to reload lesson data
-        onSelectLesson(index, true); // Open lesson in "Reset/Retake" mode
-      } catch (err) {
-        alert('فشل إعادة تعيين الدرس. يرجى مراجعة الاتصال والتحقق.');
-      }
+  const handleOpenResetModal = (e: React.MouseEvent, index: number, lesson: WordData) => {
+    e.stopPropagation();
+    setResetError(null);
+    setResetModalLesson({ index, lesson });
+  };
+
+  const handleConfirmReset = async () => {
+    if (!resetModalLesson) return;
+    setResetting(true);
+    setResetError(null);
+    try {
+      const { index, lesson } = resetModalLesson;
+      await decrementRetryCount(sheetNumber, index, username, lesson.comment);
+      await unmarkLessonCompleted(sheetNumber, index, username, lesson.comment);
+      onRefresh();
+      onSelectLesson(index, true);
+      setResetModalLesson(null);
+    } catch (err: any) {
+      console.error('Reset lesson failed:', err);
+      setResetError('فشل إعادة تعيين الدرس. يرجى مراجعة الاتصال والتحقق.');
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -95,20 +212,37 @@ export default function LessonList({
         </div>
       </motion.div>
 
-      {/* Title */}
-      <div className="mb-6 flex items-center justify-between">
+      {/* Title & Filter Bar */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <div className="p-2.5 bg-amber-400 text-slate-900 rounded-2xl shadow-sm">
             <BookOpen className="w-5 h-5" />
           </div>
           <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100">دروس القراءة التفاعلية المتاحة</h3>
         </div>
-        {loading && (
-          <div className="text-xs text-indigo-600 dark:text-indigo-400 font-bold animate-pulse flex items-center gap-1.5">
-            <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
-            <span>جاري المزامنة...</span>
-          </div>
-        )}
+
+        <div className="flex items-center gap-2">
+          {completedCount > 0 && (
+            <button
+              onClick={() => setHideCompleted(prev => !prev)}
+              className={`px-3.5 py-2 rounded-2xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer border shadow-sm ${
+                hideCompleted
+                  ? 'bg-amber-100 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-300 hover:bg-amber-200'
+                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              {hideCompleted ? <EyeOff className="w-4 h-4 text-amber-600 dark:text-amber-400" /> : <Eye className="w-4 h-4 text-indigo-500" />}
+              <span>{hideCompleted ? `إظهار الدروس المكتملة (${completedCount})` : 'إخفاء الدروس المكتملة'}</span>
+            </button>
+          )}
+
+          {loading && (
+            <div className="text-xs text-indigo-600 dark:text-indigo-400 font-bold animate-pulse flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl">
+              <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
+              <span>جاري المزامنة...</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Lesson Board */}
@@ -116,6 +250,19 @@ export default function LessonList({
         <div className="bg-[#fefcf8] dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-3xl p-12 text-center text-slate-500 dark:text-slate-400 shadow-md">
           <span className="text-4xl">📭</span>
           <p className="mt-3 text-sm font-semibold">لا توجد دروس مخصصة لك في هذا الشيت حالياً.</p>
+        </div>
+      ) : displayedLessons.length === 0 ? (
+        <div className="bg-[#fefcf8] dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-3xl p-10 text-center shadow-md">
+          <span className="text-4xl">🎉</span>
+          <h4 className="text-base font-extrabold text-emerald-700 dark:text-emerald-400 mt-2">أحسنت! جميع الدروس المتاحة مكتملة</h4>
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-1">تم إخفاء الدروس المكتملة تلقائياً للتسهيل عليك.</p>
+          <button
+            onClick={() => setHideCompleted(false)}
+            className="mt-4 px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold text-xs rounded-xl shadow-sm transition-all cursor-pointer inline-flex items-center gap-1.5"
+          >
+            <Eye className="w-4 h-4" />
+            <span>عرض الدروس المكتملة ({completedCount})</span>
+          </button>
         </div>
       ) : (
         <div className="bg-[#fefcf8] dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-md shadow-amber-100/30 dark:shadow-none transition-colors duration-300">
@@ -129,7 +276,8 @@ export default function LessonList({
                 </tr>
               </thead>
               <tbody className="divide-y divide-amber-100/40 dark:divide-slate-800/60">
-                {lessons.map((lesson, idx) => {
+                {displayedLessons.map((lesson) => {
+                  const idx = lesson.originalIndex;
                   const isCompleted = lesson.completed === 'تم';
                   
                   // Reset condition from apps script
@@ -145,7 +293,7 @@ export default function LessonList({
                     <motion.tr
                       initial={{ opacity: 0, y: 5 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.05 }}
+                      transition={{ delay: 0.03 }}
                       key={idx}
                       onClick={() => onSelectLesson(idx, false)}
                       className={`group hover:bg-amber-50/30 dark:hover:bg-slate-800/40 cursor-pointer transition-all ${
@@ -221,7 +369,7 @@ export default function LessonList({
                         <div className="flex items-center justify-center">
                           {showReset ? (
                             <button
-                              onClick={(e) => handleResetLesson(e, idx, lesson)}
+                              onClick={(e) => handleOpenResetModal(e, idx, lesson)}
                               className="px-2 py-1 md:px-3 md:py-1.5 bg-amber-400 hover:bg-amber-500 border border-amber-300 text-slate-900 text-[10px] md:text-xs font-extrabold rounded-xl transition-all flex items-center gap-1 active:scale-95 cursor-pointer shadow-sm shrink-0"
                             >
                               <RefreshCw className="w-3 h-3 md:w-3.5 md:h-3.5 animate-spin-hover" />
@@ -245,6 +393,93 @@ export default function LessonList({
           </div>
         </div>
       )}
+
+      {/* Loading overlay when refreshing or loading lessons */}
+      <AnimatePresence>
+        {loading && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md select-none pointer-events-auto" dir="rtl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white dark:bg-slate-900 border border-amber-200 dark:border-slate-800 rounded-3xl p-6 max-w-xs w-full shadow-2xl text-center flex flex-col items-center gap-3"
+            >
+              <div className="w-12 h-12 border-4 border-amber-200 dark:border-slate-800 border-t-amber-500 rounded-full animate-spin" />
+              <div>
+                <h4 className="text-sm font-extrabold text-slate-800 dark:text-slate-100">جاري قراءة وتحديث الدروس...</h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-bold mt-1">يرجى الانتظار لقراءة حالة التقدم الجديدة من الشيت</p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Reset Confirmation Modal */}
+      <AnimatePresence>
+        {resetModalLesson && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" dir="rtl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl text-right"
+            >
+              <div className="flex items-center gap-3 text-amber-500 mb-3">
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-2xl">
+                  <RefreshCw className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">إعادة محاولة الدرس</h3>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold mt-0.5">
+                    {resetModalLesson.lesson.comment || 'درس غير معنون'}
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-xs md:text-sm text-slate-600 dark:text-slate-300 font-medium leading-relaxed my-4">
+                هل أنت متأكد من رغبتك في إعادة المحاولة لهذا الدرس؟
+                <br />
+                <span className="text-amber-600 dark:text-amber-400 font-bold block mt-1">
+                  سيؤدي ذلك إلى استهلاك محاولة واحدة من محاولاتك المتاحة (المتبقي: {resetModalLesson.lesson.retryResetCount}).
+                </span>
+              </p>
+
+              {resetError && (
+                <div className="p-3 mb-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 rounded-2xl text-xs font-bold">
+                  {resetError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setResetModalLesson(null)}
+                  disabled={resetting}
+                  className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-xl text-xs transition-all cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={handleConfirmReset}
+                  disabled={resetting}
+                  className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold rounded-xl text-xs transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  {resetting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>جاري إعادة التعيين...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-4 h-4" />
+                      <span>نعم، أعد المحاولة</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
