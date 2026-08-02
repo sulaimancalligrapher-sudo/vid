@@ -569,6 +569,7 @@ export default function App() {
                 className="flex-grow flex flex-col"
               >
                 <StudentLogin
+                  headerConfig={headerConfig}
                   onLoginSuccess={handleLoginSuccess}
                   onOpenSettings={() => setShowSecondPassModal(true)}
                   isConfigured={isConfigured}

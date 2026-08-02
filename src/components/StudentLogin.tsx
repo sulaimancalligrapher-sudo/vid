@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { User, FileSpreadsheet, KeyRound, AlertCircle, Settings, MapPin, Loader2 } from 'lucide-react';
-import { loginStudent } from '../api';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { User, FileSpreadsheet, KeyRound, AlertCircle, Loader2, QrCode, Camera, X, CheckCircle2 } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
+import { loginStudent, formatDriveImageUrl } from '../api';
 import { useLanguage } from '../translations';
+import { HeaderConfig } from '../types';
 
 interface StudentLoginProps {
+  headerConfig?: HeaderConfig;
   onLoginSuccess: (username: string, sheetNumber: string, sheetName: string) => void;
   onOpenSettings: () => void;
   isConfigured: boolean;
@@ -13,6 +16,7 @@ interface StudentLoginProps {
 }
 
 export default function StudentLogin({ 
+  headerConfig,
   onLoginSuccess, 
   onOpenSettings, 
   isConfigured, 
@@ -41,6 +45,170 @@ export default function StudentLogin({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoAttempted, setAutoAttempted] = useState(false);
+
+  // QR Code Scanner State
+  const [isScanning, setIsScanning] = useState(false);
+  const [scannerError, setScannerError] = useState<string | null>(null);
+  const [qrSuccessMsg, setQrSuccessMsg] = useState<string | null>(null);
+  const html5QrcodeRef = useRef<Html5Qrcode | null>(null);
+
+  // Default fallback logo given by user
+  const defaultDriveLogo = 'https://lh3.googleusercontent.com/d/15i8enIJFkPI0ZjBca0wfq4fHkFIwIY0y';
+  const logoUrlToDisplay = formatDriveImageUrl(headerConfig?.loginLogoUrl) || formatDriveImageUrl(headerConfig?.logoUrl) || defaultDriveLogo;
+
+  // Cleanup scanner on unmount
+  useEffect(() => {
+    return () => {
+      stopScanner();
+    };
+  }, []);
+
+  const stopScanner = async () => {
+    if (html5QrcodeRef.current) {
+      try {
+        if (html5QrcodeRef.current.isScanning) {
+          await html5QrcodeRef.current.stop();
+        }
+        html5QrcodeRef.current.clear();
+      } catch (err) {
+        console.warn("Scanner cleanup notice:", err);
+      }
+      html5QrcodeRef.current = null;
+    }
+    setIsScanning(false);
+  };
+
+  const parseQrData = (decodedText: string): { username?: string; sheetNumber?: string } | null => {
+    if (!decodedText) return null;
+    const text = decodedText.trim();
+
+    // 1. JSON Format e.g. {"username": "سليمان", "sheetNumber": "1"}
+    if ((text.startsWith('{') && text.endsWith('}')) || (text.startsWith('%7B') && text.endsWith('%7D'))) {
+      try {
+        const decodedStr = text.startsWith('%7B') ? decodeURIComponent(text) : text;
+        const obj = JSON.parse(decodedStr);
+        const user = obj.username || obj.name || obj.user || obj.student || obj.student_name || obj.u || '';
+        const sheet = obj.sheet_number || obj.sheetNumber || obj.number || obj.sheet || obj.num || obj.id || obj.s || '';
+        if (user || sheet) {
+          return { username: String(user).trim(), sheetNumber: String(sheet).trim() };
+        }
+      } catch (e) {}
+    }
+
+    // 2. URL format e.g. https://...?username=سليمان&sheet_number=1
+    if (text.includes('http://') || text.includes('https://') || text.includes('?')) {
+      try {
+        const urlStr = text.startsWith('http') ? text : `https://dummy.com/${text}`;
+        const urlObj = new URL(urlStr);
+        const params = urlObj.searchParams;
+        const user = params.get('username') || params.get('name') || params.get('user') || params.get('student') || params.get('student_name');
+        const sheet = params.get('sheet_number') || params.get('sheetNumber') || params.get('number') || params.get('sheet') || params.get('num') || params.get('id');
+        if (user || sheet) {
+          return { username: user ? user.trim() : undefined, sheetNumber: sheet ? sheet.trim() : undefined };
+        }
+      } catch (e) {}
+    }
+
+    // 3. Separator Formats: "اسم الطالب,1" or "اسم الطالب|1"
+    const delimiters = [',', '|', ':', '\n', ';', '-'];
+    for (const delim of delimiters) {
+      if (text.includes(delim)) {
+        const parts = text.split(delim).map(p => p.trim()).filter(Boolean);
+        if (parts.length >= 2) {
+          let user = parts[0];
+          let sheet = parts[1];
+          if (!isNaN(Number(parts[0])) && isNaN(Number(parts[1]))) {
+            sheet = parts[0];
+            user = parts[1];
+          }
+          return { username: user, sheetNumber: sheet };
+        }
+      }
+    }
+
+    // 4. Plain text fallback: treat as username
+    return { username: text, sheetNumber: '' };
+  };
+
+  const handleScanSuccess = async (decodedText: string) => {
+    const parsed = parseQrData(decodedText);
+    await stopScanner();
+
+    if (parsed && (parsed.username || parsed.sheetNumber)) {
+      const newUsername = parsed.username || username;
+      const newSheetNumber = parsed.sheetNumber || sheetNumber;
+
+      if (parsed.username) setUsername(parsed.username);
+      if (parsed.sheetNumber) setSheetNumber(parsed.sheetNumber);
+
+      setQrSuccessMsg(`تم قراءة الكيوركود بنجاح: ${newUsername} ${newSheetNumber ? `(رقم الورقة: ${newSheetNumber})` : ''}`);
+      setError(null);
+
+      // Play success audio beep
+      try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          const audioCtx = new AudioContextClass();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+          gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.18);
+        }
+      } catch (e) {}
+
+      // Auto-trigger login if both username and sheet number are present
+      if (newUsername && newSheetNumber) {
+        setTimeout(() => {
+          executeLogin(newUsername, newSheetNumber);
+        }, 500);
+      }
+    } else {
+      setError('رمز الكيو ار الذي تم مسحه لا يحتوي على بيانات طالب صالحة.');
+    }
+  };
+
+  const startScanner = () => {
+    setScannerError(null);
+    setQrSuccessMsg(null);
+    setError(null);
+    setIsScanning(true);
+
+    setTimeout(async () => {
+      const qrElem = document.getElementById('qr-reader');
+      if (!qrElem) return;
+
+      try {
+        const html5QrCode = new Html5Qrcode('qr-reader');
+        html5QrcodeRef.current = html5QrCode;
+
+        const config = { fps: 10, qrbox: { width: 220, height: 220 } };
+
+        try {
+          await html5QrCode.start(
+            { facingMode: 'environment' },
+            config,
+            (decodedText) => handleScanSuccess(decodedText),
+            () => {}
+          );
+        } catch (camErr) {
+          await html5QrCode.start(
+            { facingMode: 'user' },
+            config,
+            (decodedText) => handleScanSuccess(decodedText),
+            () => {}
+          );
+        }
+      } catch (err: any) {
+        console.error('Camera QR start error:', err);
+        setScannerError('تعذر فتح الكاميرا لمسح الكيو ار. يرجى السماح باستخدام الكاميرا في إعدادات المتصفح.');
+      }
+    }, 250);
+  };
 
   const executeLogin = async (userVal: string, sheetVal: string) => {
     if (!isConfigured) {
@@ -129,11 +297,90 @@ export default function StudentLogin({
         <div className="absolute -top-16 -left-16 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-16 -right-16 w-32 h-32 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="text-center mb-8 relative">
-          <span className="text-5xl">🎓</span>
-          <h1 className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-3">{t('login_title')}</h1>
+        {/* Custom Logo & Title Header */}
+        <div className="text-center mb-6 relative">
+          {logoUrlToDisplay ? (
+            <div className="mb-4 flex justify-center">
+              <img
+                src={logoUrlToDisplay}
+                alt="شعار"
+                referrerPolicy="no-referrer"
+                className="max-h-24 max-w-[200px] object-contain rounded-2xl shadow-sm border border-amber-100/50 dark:border-slate-800 p-1.5 bg-white dark:bg-slate-950 transition-all hover:scale-105"
+                onError={(e) => {
+                  // Fallback to emoji if image fails to load
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            </div>
+          ) : (
+            <span className="text-5xl">🎓</span>
+          )}
+          <h1 className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-2">{t('login_title')}</h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-1">{t('login_subtitle')}</p>
         </div>
+
+        {/* QR Code Scan Quick Button */}
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={startScanner}
+            disabled={loading || isScanning}
+            className="w-full bg-indigo-50 dark:bg-slate-800/80 hover:bg-indigo-100/80 dark:hover:bg-slate-800 border border-indigo-200/80 dark:border-slate-700 text-indigo-700 dark:text-indigo-300 font-bold py-3 px-4 rounded-2xl transition-all flex items-center justify-center gap-2.5 text-xs cursor-pointer shadow-sm active:scale-98"
+          >
+            <QrCode className="w-4.5 h-4.5 text-indigo-600 dark:text-indigo-400" />
+            <span>مسح كيو ار كود (QR Code) لاسم الطالب وركمه 📷</span>
+          </button>
+        </div>
+
+        {/* QR Scanner Camera Modal Overlay */}
+        <AnimatePresence>
+          {isScanning && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+            >
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-sm w-full text-center text-slate-100 shadow-2xl relative overflow-hidden" dir="rtl">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+                  <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                    <Camera className="w-5 h-5" />
+                    <span>قارئ الكيو ار (QR Code)</span>
+                  </div>
+                  <button
+                    onClick={stopScanner}
+                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <p className="text-xs text-slate-400 mb-3">
+                  وجّه كاميرا الهاتف نحو رمز الـ QR الخاص بطاقتك أو رقمك
+                </p>
+
+                {/* QR Camera Reader Container */}
+                <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-dashed border-amber-500/50 min-h-[250px] flex items-center justify-center">
+                  <div id="qr-reader" className="w-full h-full" />
+                </div>
+
+                {scannerError && (
+                  <div className="mt-4 p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl flex items-center gap-2 text-right">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{scannerError}</span>
+                  </div>
+                )}
+
+                <button
+                  onClick={stopScanner}
+                  className="mt-4 w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl text-xs transition-all cursor-pointer"
+                >
+                  إلغاء مسح الكاميرا
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Warning if Sheet connection is not configured */}
         {!isConfigured && (
@@ -185,6 +432,18 @@ export default function StudentLogin({
             </div>
           </div>
 
+          {/* Success QR Scanned Notice */}
+          {qrSuccessMsg && (
+            <motion.div
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl text-xs flex items-center gap-2.5 font-bold"
+            >
+              <CheckCircle2 className="w-4.5 h-4.5 shrink-0 text-emerald-500" />
+              <span>{qrSuccessMsg}</span>
+            </motion.div>
+          )}
+
           {/* Feedback message */}
           {error && (
             <motion.div
@@ -220,4 +479,5 @@ export default function StudentLogin({
     </div>
   );
 }
+
 

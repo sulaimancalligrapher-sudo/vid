@@ -746,15 +746,37 @@ export async function updateAdminAnswer(payload: {
   return fetchGas({ action: 'updateAdminAnswer' }, 'POST', payload);
 }
 
+// Helper to format image URLs (including converting Google Drive share links to embeddable links)
+export function formatDriveImageUrl(url?: string): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+
+  // Handle Google Drive file link: https://drive.google.com/file/d/FILE_ID/view...
+  const matchFileD = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchFileD && matchFileD[1]) {
+    return `https://lh3.googleusercontent.com/d/${matchFileD[1]}`;
+  }
+
+  // Handle Google Drive open/id link: https://drive.google.com/open?id=FILE_ID or ?id=FILE_ID
+  const matchId = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (matchId && matchId[1]) {
+    return `https://lh3.googleusercontent.com/d/${matchId[1]}`;
+  }
+
+  return trimmed;
+}
+
 // 23. Fetch Dynamic Header Configuration from 'header' sheet tab
 export function parseHeaderResponse(res: any): HeaderConfig {
   if (!res) return {};
 
-  // Case A: Response is an Object (e.g. { title, subtitle, logoUrl, buttons, socials })
+  // Case A: Response is an Object (e.g. { title, subtitle, logoUrl, loginLogoUrl, buttons, socials })
   if (typeof res === 'object' && !Array.isArray(res)) {
     const title = res.title || res.B2 || res.b2 || res.subject || '';
     const subtitle = res.subtitle || res.B3 || res.b3 || res.description || '';
-    const logoUrl = res.logoUrl || res.logo || res.C2 || res.c2 || '';
+    const logoUrl = formatDriveImageUrl(res.logoUrl || res.logo || res.C2 || res.c2 || '');
+    const loginLogoUrl = formatDriveImageUrl(res.loginLogoUrl || res.D2 || res.d2 || '');
 
     let buttons: HeaderNavButton[] = [];
     if (Array.isArray(res.buttons)) {
@@ -792,6 +814,7 @@ export function parseHeaderResponse(res: any): HeaderConfig {
       title: title ? String(title).trim() : undefined,
       subtitle: subtitle ? String(subtitle).trim() : undefined,
       logoUrl: logoUrl ? String(logoUrl).trim() : undefined,
+      loginLogoUrl: loginLogoUrl ? String(loginLogoUrl).trim() : undefined,
       buttons,
       socials
     };
@@ -812,10 +835,11 @@ export function parseHeaderResponse(res: any): HeaderConfig {
       return '';
     };
 
-    // Row 2 in Sheet is index 1 (0-indexed). Cell B2 = col 1, C2 = col 2.
+    // Row 2 in Sheet is index 1 (0-indexed). Cell B2 = col 1, C2 = col 2, D2 = col 3.
     // If array starts directly at Row 2, then index 0.
     let title = getCellValue(1, 1) || getCellValue(0, 1);
-    let logoUrl = getCellValue(1, 2) || getCellValue(0, 2);
+    let logoUrl = formatDriveImageUrl(getCellValue(1, 2) || getCellValue(0, 2));
+    let loginLogoUrl = formatDriveImageUrl(getCellValue(1, 3) || getCellValue(0, 3));
     let subtitle = getCellValue(2, 1) || getCellValue(1, 1);
 
     // Socials row 2 (index 1): E2 (col 4), F2 (col 5), G2 (col 6), H2 (col 7)
@@ -827,7 +851,8 @@ export function parseHeaderResponse(res: any): HeaderConfig {
     // Header label check
     if (getCellValue(0, 1) === 'الموضوع' || title === 'الموضوع') {
       title = getCellValue(1, 1);
-      logoUrl = getCellValue(1, 2);
+      logoUrl = formatDriveImageUrl(getCellValue(1, 2));
+      loginLogoUrl = formatDriveImageUrl(getCellValue(1, 3));
       subtitle = getCellValue(2, 1);
       facebook = getCellValue(1, 4);
       instagram = getCellValue(1, 5);
@@ -861,6 +886,7 @@ export function parseHeaderResponse(res: any): HeaderConfig {
       title: title || undefined,
       subtitle: subtitle || undefined,
       logoUrl: logoUrl || undefined,
+      loginLogoUrl: loginLogoUrl || undefined,
       buttons,
       socials: {
         facebook: facebook || undefined,

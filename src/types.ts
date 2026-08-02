@@ -113,6 +113,7 @@ export interface HeaderConfig {
   title?: string; // B2
   subtitle?: string; // B3
   logoUrl?: string; // C2
+  loginLogoUrl?: string; // D2
   buttons?: HeaderNavButton[]; // B4:C4 to B8:C8
   socials?: SocialLinks; // E2, F2, G2, H2
 }

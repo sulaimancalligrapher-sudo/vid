@@ -341,12 +341,13 @@ function getData() {
 function getHeaderConfig() {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName('header') || ss.getSheetByName('Header');
-  if (!sheet) return { title: '', subtitle: '', logoUrl: '', buttons: [], socials: {} };
+  if (!sheet) return { title: '', subtitle: '', logoUrl: '', loginLogoUrl: '', buttons: [], socials: {} };
   var data = sheet.getDataRange().getValues();
-  if (!data || data.length === 0) return { title: '', subtitle: '', logoUrl: '', buttons: [], socials: {} };
+  if (!data || data.length === 0) return { title: '', subtitle: '', logoUrl: '', loginLogoUrl: '', buttons: [], socials: {} };
 
   var title = (data.length > 1 && data[1].length > 1 && data[1][1]) ? data[1][1].toString().trim() : '';
   var logoUrl = (data.length > 1 && data[1].length > 2 && data[1][2]) ? data[1][2].toString().trim() : '';
+  var loginLogoUrl = (data.length > 1 && data[1].length > 3 && data[1][3]) ? data[1][3].toString().trim() : '';
   var subtitle = (data.length > 2 && data[2].length > 1 && data[2][1]) ? data[2][1].toString().trim() : '';
 
   // Socials row 2 (index 1): E2 (col 4), F2 (col 5), G2 (col 6), H2 (col 7)
@@ -368,6 +369,7 @@ function getHeaderConfig() {
     title: title,
     subtitle: subtitle,
     logoUrl: logoUrl,
+    loginLogoUrl: loginLogoUrl,
     buttons: buttons,
     socials: {
       facebook: facebook,
