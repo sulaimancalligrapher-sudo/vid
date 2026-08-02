@@ -96,3 +96,24 @@ export interface AdminAnswerRow {
   completed?: string; // العمود AO
   retryResetCount?: number | null; // العمود AP
 }
+
+export interface HeaderNavButton {
+  label: string;
+  url: string;
+}
+
+export interface SocialLinks {
+  facebook?: string; // E2
+  instagram?: string; // F2
+  youtube?: string; // G2
+  line?: string; // H2
+}
+
+export interface HeaderConfig {
+  title?: string; // B2
+  subtitle?: string; // B3
+  logoUrl?: string; // C2
+  buttons?: HeaderNavButton[]; // B4:C4 to B8:C8
+  socials?: SocialLinks; // E2, F2, G2, H2
+}
+

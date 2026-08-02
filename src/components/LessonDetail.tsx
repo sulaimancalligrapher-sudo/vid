@@ -18,6 +18,7 @@ import {
   markLessonCompleted
 } from '../api';
 import QuestionModal from './QuestionModal';
+import { useLanguage } from '../translations';
 
 // Helper to group Arabic base characters with their combining diacritics and elongation (Tatweel/Kashida ـ)
 function groupArabicLetters(word: string): string[] {
@@ -119,6 +120,7 @@ export default function LessonDetail({
   isReset: initialIsReset,
   onBack,
 }: LessonDetailProps) {
+  const { t } = useLanguage();
   const [isReset, setIsReset] = useState(initialIsReset);
   const [activeTab, setActiveTab] = useState<'study' | 'assignment'>('study');
   const groupedLetters = groupArabicLetters(lesson.word);
@@ -1362,7 +1364,7 @@ export default function LessonDetail({
         className="mb-6 px-5 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-sky-100 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 rounded-2xl cursor-pointer text-xs font-extrabold transition-all flex items-center gap-1.5 active:scale-95 shadow-sm disabled:opacity-50"
       >
         <ArrowRight className="w-4 h-4" />
-        <span>حفظ التقدم والرجوع للدروس</span>
+        <span>{t('save_and_back')}</span>
       </button>
 
       {/* Header Info */}
@@ -1370,15 +1372,15 @@ export default function LessonDetail({
         <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <span className="text-amber-600 text-xs font-bold block mb-1">الدرس النشط #{lessonIndex + 1}</span>
+            <span className="text-amber-600 text-xs font-bold block mb-1">{t('active_lesson')} #{lessonIndex + 1}</span>
             <h1 className="text-xl md:text-2xl font-extrabold text-slate-800 dark:text-slate-100">{lesson.comment || 'درس غير معنون'}</h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-1.5">
-              الكلمة المكتوبة: <span className="text-indigo-600 dark:text-indigo-400 font-extrabold bg-indigo-50/70 dark:bg-indigo-950/40 px-3 py-1 rounded-xl text-sm border border-indigo-100/50 dark:border-indigo-900/50">{lesson.word}</span>
+              {t('written_word')} <span className="text-indigo-600 dark:text-indigo-400 font-extrabold bg-indigo-50/70 dark:bg-indigo-950/40 px-3 py-1 rounded-xl text-sm border border-indigo-100/50 dark:border-indigo-900/50">{lesson.word}</span>
             </p>
           </div>
           {isReviewOnly && (
             <div className="px-4 py-2 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/50 rounded-2xl text-indigo-600 dark:text-indigo-400 text-xs font-extrabold shadow-sm">
-              وضع مراجعة الدرس فقط 👁️
+              {t('review_mode_badge')}
             </div>
           )}
         </div>
@@ -1395,7 +1397,7 @@ export default function LessonDetail({
           >
             <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-rose-500" />
             <div>
-              <p className="font-bold text-rose-700">شروط الانتقال غير مكتملة:</p>
+              <p className="font-bold text-rose-700">{t('requirements_not_met')}</p>
               <p className="mt-1 leading-relaxed text-slate-600 font-bold">{exitValidationMsg}</p>
             </div>
           </motion.div>
@@ -1410,7 +1412,7 @@ export default function LessonDetail({
             activeTab === 'study' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
           }`}
         >
-          <span>قسم الشرح والمشاهدة 📺</span>
+          <span>{t('study_tab')}</span>
           {activeTab === 'study' && (
             <motion.div layoutId="tab-line" className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 dark:bg-indigo-500 rounded-full" />
           )}
@@ -1421,7 +1423,7 @@ export default function LessonDetail({
             activeTab === 'assignment' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
           }`}
         >
-          <span>قسم رفع وتصوير الواجبات 📸</span>
+          <span>{t('assignment_tab')}</span>
           {activeTab === 'assignment' && (
             <motion.div layoutId="tab-line" className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 dark:bg-indigo-500 rounded-full" />
           )}
@@ -1439,7 +1441,7 @@ export default function LessonDetail({
                 <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-5 shadow-lg shadow-sky-100/40 dark:shadow-none text-center">
                   <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3.5 flex items-center gap-1.5 justify-center">
                     <ImageIcon className="w-5 h-5 text-indigo-500" />
-                    <span>صورة توضيحية للدرس</span>
+                    <span>{t('illustration_photo')}</span>
                   </h3>
                   <div
                     onClick={() => setLightboxImg(getPlayableImageUrl(lesson.image))}
@@ -1461,7 +1463,7 @@ export default function LessonDetail({
                 >
                   <h3 className={`text-sm font-bold text-slate-800 dark:text-slate-100 mb-3.5 flex items-center gap-1.5 justify-center ${ytFullscreen ? 'text-base mb-5' : ''}`}>
                     <Video className="w-5 h-5 text-indigo-500 animate-pulse" />
-                    <span>فيديو الدرس التفاعلي المساعد</span>
+                    <span>{t('interactive_video')}</span>
                   </h3>
                   
                   {/* Aspect video player frame wrapper */}
@@ -1612,7 +1614,7 @@ export default function LessonDetail({
                 <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-5 shadow-lg shadow-sky-100/40 dark:shadow-none text-center">
                   <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3.5 flex items-center gap-1.5 justify-center">
                     <Volume2 className="w-5 h-5 text-indigo-500 animate-pulse" />
-                    <span>صوت شرح الدرس وقراءة المعلم</span>
+                    <span>{t('audio_explanation')}</span>
                   </h3>
 
                   {/* custom controller panel */}
@@ -1664,7 +1666,7 @@ export default function LessonDetail({
                 <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-5 shadow-lg shadow-sky-100/40 dark:shadow-none text-center">
                   <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-2 flex items-center gap-1.5 justify-center">
                     <Sparkles className="w-5 h-5 text-amber-500 animate-bounce" />
-                    <span>الاستماع الكامل الموجه للدرس</span>
+                    <span>{t('guided_audio_listening')}</span>
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mb-4 max-w-xs mx-auto font-medium">
                     {lesson.instruction || 'يرجى الاستماع بالكامل للدرس الصوتي لتثبيت الفهم والحصول على العلامة التامة.'}
@@ -1721,10 +1723,10 @@ export default function LessonDetail({
                 <div className="bg-[#fefcf8] dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-3xl p-6 shadow-md shadow-amber-100/25 dark:shadow-none text-center flex flex-col items-center transition-colors duration-300">
                   <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1.5 justify-center">
                     <Volume2 className="w-5 h-5 text-amber-500 animate-pulse" />
-                    <span>انقر على الحروف مباشرة داخل الكلمة للاستماع لنطقها الصحيح</span>
+                    <span>{t('letters_click_instruction')}</span>
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mb-4">
-                    هذا يعلمك كيف يتغير شكل الحرف عند اتصاله بباقي الحروف في الكلمة.
+                    {t('letters_shape_note')}
                   </p>
 
                   {/* Word Box */}
@@ -1781,7 +1783,7 @@ export default function LessonDetail({
                   </div>
 
                   <div className="flex items-center gap-3 bg-amber-50/30 px-4 py-2.5 rounded-xl border border-amber-100/40 w-full max-w-xs justify-center">
-                    <span className="text-[11px] text-slate-500 font-bold">حجم صوت الحروف:</span>
+                    <span className="text-[11px] text-slate-500 font-bold">{t('letters_volume')}</span>
                     <Volume2 className="w-3.5 h-3.5 text-slate-500" />
                     <input
                       type="range"
@@ -1810,9 +1812,9 @@ export default function LessonDetail({
                 <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 text-rose-500 dark:text-rose-400 mb-3.5 shadow-sm">
                   <Mic className="w-6 h-6 animate-pulse" />
                 </div>
-                <h3 className="text-sm font-extrabold text-slate-850 dark:text-slate-100">الواجب الصوتي لقراءة الطالب 🎙️</h3>
+                <h3 className="text-sm font-extrabold text-slate-850 dark:text-slate-100">{t('student_reading_hw')}</h3>
                 <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold leading-relaxed mt-1 max-w-xs mx-auto mb-4">
-                  سجل صوتك أثناء قراءة الكلمة المستهدفة ({lesson.word}) أو اختر ملفاً صوتياً جاهزاً لإرساله وتصحيحه.
+                  {t('rec_section_title')} ({lesson.word})
                 </p>
 
                 {/* Lock Badge if audio is already submitted & saved */}
@@ -1820,7 +1822,7 @@ export default function LessonDetail({
                   <div className="w-full p-5 bg-emerald-50/90 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 rounded-2xl flex flex-col items-center justify-center gap-2 shadow-sm">
                     <CheckCircle2 className="w-7 h-7 text-emerald-500" />
                     <span className="text-xs text-emerald-800 dark:text-emerald-300 font-extrabold">
-                      تم قفل وإرسال الواجب الصوتي بنجاح! 🔒
+                      {t('audio_locked_success')}
                     </span>
                     {savedRecordingLink && (
                       <a
@@ -1829,7 +1831,7 @@ export default function LessonDetail({
                         rel="noopener noreferrer"
                         className="text-xs text-indigo-600 dark:text-indigo-400 underline font-extrabold mt-1 hover:text-indigo-800"
                       >
-                        استماع للتسجيل المرسل
+                        {t('listen_sent_recording')}
                       </a>
                     )}
                     {isReset && (
@@ -1841,7 +1843,7 @@ export default function LessonDetail({
                         }}
                         className="mt-2 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold cursor-pointer transition-all active:scale-95 shadow-sm"
                       >
-                        إعادة التسجيل / رفع جديد 🔄
+                        {t('re_record_new')}
                       </button>
                     )}
                   </div>
@@ -1852,7 +1854,7 @@ export default function LessonDetail({
                     {uploadingAudio ? (
                       <div className="flex flex-col items-center gap-2 py-4">
                         <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin" />
-                        <span className="text-xs text-indigo-500 font-extrabold">جاري الرفع والتوثيق...</span>
+                        <span className="text-xs text-indigo-500 font-extrabold">{t('rec_uploading')}</span>
                       </div>
                     ) : (
                       <div className="h-12 flex items-center justify-center text-slate-500 dark:text-slate-400 text-xs mb-3 font-bold">
@@ -1865,9 +1867,9 @@ export default function LessonDetail({
                             <span className="w-1.5 h-4 bg-red-500 rounded-full animate-bounce [animation-delay:0.6s]" />
                           </div>
                         ) : recordedAudioUrl ? (
-                          'معاينة التسجيل قبل الإرسال'
+                          t('preview_before_sending')
                         ) : (
-                          'الميكروفون جاهز لبدء التسجيل'
+                          t('mic_ready')
                         )}
                       </div>
                     )}
@@ -1875,7 +1877,7 @@ export default function LessonDetail({
                     {/* Timer Display when recording */}
                     {recording && (
                       <span className="text-red-500 text-xs font-extrabold block mb-4 animate-pulse">
-                        جاري التسجيل: {formatTime(recordingSeconds)} ثانية
+                        {formatTime(recordingSeconds)}
                       </span>
                     )}
 
@@ -1892,7 +1894,7 @@ export default function LessonDetail({
                             onClick={() => stopRecording()}
                             className="px-5 py-3 bg-amber-400 hover:bg-amber-500 text-slate-900 border border-amber-500/20 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-400/20"
                           >
-                            <span>إيقاف التسجيل ومعاينة ⏹️</span>
+                            <span>{t('stop_and_preview')}</span>
                           </button>
                         ) : recordedAudioUrl ? (
                           <div className="flex items-center gap-2">
@@ -1901,7 +1903,7 @@ export default function LessonDetail({
                               disabled={uploadingAudio}
                               className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/15"
                             >
-                              <span>تأكيد وإرسال الواجب 🟢</span>
+                              <span>{t('confirm_send_hw')}</span>
                             </button>
                             <button
                               onClick={() => {
@@ -1920,12 +1922,12 @@ export default function LessonDetail({
                               className="px-5 py-3 bg-red-500 hover:bg-red-600 text-white font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-red-500/15"
                             >
                               <span className="w-2 bg-white h-2 rounded-full animate-ping" />
-                              <span>ابدأ تسجيل الواجب الصوتي 🎙️</span>
+                              <span>{t('start_recording_hw')}</span>
                             </button>
                             {/* Custom local file picker */}
                             <label className="px-4 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-sm">
                               <Upload className="w-4 h-4 text-indigo-500" />
-                              <span>اختيار ملف</span>
+                              <span>{t('select_file')}</span>
                               <input
                                 type="file"
                                 accept="audio/*"
@@ -1952,9 +1954,9 @@ export default function LessonDetail({
                 <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 text-indigo-500 dark:text-indigo-400 mb-3.5 shadow-sm">
                   <ImageIcon className="w-6 h-6 animate-pulse" />
                 </div>
-                <h3 className="text-sm font-extrabold text-slate-850 dark:text-slate-100">{lesson.uploadTitle || 'رفع صورة الواجب المساعد 📸'}</h3>
+                <h3 className="text-sm font-extrabold text-slate-850 dark:text-slate-100">{lesson.uploadTitle || t('photo_hw_title')}</h3>
                 <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold leading-relaxed mt-1 max-w-xs mx-auto mb-4">
-                  التقط صورة بكاميرا جهازك الآن مع علامة مائية ذكية، أو اختر صورة جاهزة لإرسالها.
+                  {t('photo_section_title')}
                 </p>
 
                 {/* Lock Badge if image is already submitted & saved */}
@@ -1962,7 +1964,7 @@ export default function LessonDetail({
                   <div className="w-full p-5 bg-emerald-50/90 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 rounded-2xl flex flex-col items-center justify-center gap-2 shadow-sm">
                     <CheckCircle2 className="w-7 h-7 text-emerald-500" />
                     <span className="text-xs text-emerald-800 dark:text-emerald-300 font-extrabold">
-                      تم قفل وإرسال صورة الواجب بنجاح! 🔒
+                      {t('photo_locked_success')}
                     </span>
                     {savedImageLink && (
                       <a
@@ -1971,7 +1973,7 @@ export default function LessonDetail({
                         rel="noopener noreferrer"
                         className="text-xs text-indigo-600 dark:text-indigo-400 underline font-extrabold mt-1 hover:text-indigo-800"
                       >
-                        معاينة الصورة المرسلة
+                        {t('view_sent_photo')}
                       </a>
                     )}
                     {isReset && (
@@ -1983,7 +1985,7 @@ export default function LessonDetail({
                         }}
                         className="mt-2 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold cursor-pointer transition-all active:scale-95 shadow-sm"
                       >
-                        إعادة التقاط / رفع جديد 🔄
+                        {t('re_capture_new')}
                       </button>
                     )}
                   </div>
@@ -1994,11 +1996,11 @@ export default function LessonDetail({
                     {uploadingImage ? (
                       <div className="flex flex-col items-center gap-2 py-4">
                         <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin" />
-                        <span className="text-xs text-indigo-500 font-extrabold">جاري الرفع والتوثيق...</span>
+                        <span className="text-xs text-indigo-500 font-extrabold">{t('photo_uploading')}</span>
                       </div>
                     ) : (
                       <div className="h-12 flex items-center justify-center text-slate-500 dark:text-slate-400 text-xs mb-3 font-bold">
-                        {cameraActive ? 'الكاميرا تلتقط مباشرة...' : capturedImagePreview ? 'تم التقاط صورة الواجب!' : 'الكاميرا مستعدة للبدء'}
+                        {cameraActive ? t('camera_live') : capturedImagePreview ? t('photo_captured') : t('camera_ready')}
                       </div>
                     )}
 
@@ -2031,7 +2033,7 @@ export default function LessonDetail({
                               onClick={capturePhoto}
                               className="px-5 py-3 bg-amber-400 hover:bg-amber-500 text-slate-900 border border-amber-500/20 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-400/20"
                             >
-                              <span>قص والتقاط الصورة 📸</span>
+                              <span>{t('capture_crop')}</span>
                             </button>
                             <button
                               onClick={stopCamera}
@@ -2047,7 +2049,7 @@ export default function LessonDetail({
                               disabled={uploadingImage}
                               className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl transition-all flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/15"
                             >
-                              <span>تأكيد وإرسال الصورة 🟢</span>
+                              <span>{t('confirm_send_photo')}</span>
                             </button>
                             <button
                               onClick={() => {
@@ -2057,7 +2059,7 @@ export default function LessonDetail({
                               }}
                               className="px-4 py-2.5 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 font-extrabold rounded-xl transition-all text-xs cursor-pointer shadow-sm"
                             >
-                              إعادة تصوير 🔄
+                              {t('re_take_photo')}
                             </button>
                           </div>
                         ) : (
@@ -2066,11 +2068,11 @@ export default function LessonDetail({
                               onClick={startCamera}
                               className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-md shadow-indigo-600/15"
                             >
-                              <span>التقاط بالكاميرا 📷</span>
+                              <span>{t('capture_with_camera')}</span>
                             </button>
                             <label className="px-4 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-sky-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-extrabold rounded-xl transition-all flex items-center gap-1.5 text-xs active:scale-95 cursor-pointer shadow-sm">
                               <Upload className="w-4 h-4 text-indigo-500" />
-                              <span>اختيار ملف</span>
+                              <span>{t('select_file')}</span>
                               <input
                                 type="file"
                                 accept="image/*"
@@ -2168,9 +2170,9 @@ export default function LessonDetail({
                 </div>
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">جاري حفظ التقدم وتحديث السجل</h3>
+                <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">{t('saving_progress_overlay_title')}</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-2 leading-relaxed">
-                  يرجى الانتظار دون إغلاق الصفحة حتى تكتمل العملية بنجاح وتحديث قائمة الدروس...
+                  {t('saving_progress_overlay_sub')}
                 </p>
               </div>
             </motion.div>

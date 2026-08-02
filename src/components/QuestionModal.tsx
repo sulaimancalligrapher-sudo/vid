@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { HelpCircle, Check, AlertCircle, Send, CheckCircle2, ArrowLeft, RotateCcw, X } from 'lucide-react';
 import { Question } from '../types';
+import { useLanguage } from '../translations';
 
 interface QuestionModalProps {
   question: Question;
@@ -51,6 +52,7 @@ export default function QuestionModal({
   onRewatch,
   rewatchType,
 }: QuestionModalProps) {
+  const { t } = useLanguage();
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textAnswer, setTextAnswer] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -89,11 +91,11 @@ export default function QuestionModal({
       let correctLabel: string | undefined = undefined;
 
       if (isCorrect === null) {
-        text = 'تم تسجيل إجابتك بنجاح! 👍';
+        text = t('question_result_recorded_title');
       } else if (isCorrect) {
-        text = 'أحسنت! إجابتك صحيحة وممتازة 🎉🌟';
+        text = t('question_result_correct_title');
       } else {
-        text = 'للأسف إجابتك غير صحيحة.';
+        text = t('question_result_wrong_title');
         const numAnswer = parseInt(question.correctAnswer);
         correctLabel = (!isNaN(numAnswer) && numAnswer >= 1 && numAnswer <= validOptions.length)
           ? validOptions[numAnswer - 1]
@@ -122,7 +124,7 @@ export default function QuestionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm" dir="rtl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm">
       {/* Result Popup Modal (When showResult is 'نعم' and answer is submitted) */}
       {resultModal ? (
         <motion.div
@@ -164,10 +166,10 @@ export default function QuestionModal({
               : 'text-blue-400'
           }`}>
             {resultModal.success === true
-              ? 'إجابة صحيحة وممتازة! 🎉'
+              ? t('question_result_correct_title')
               : resultModal.success === false
-              ? 'إجابة خاطئة ❌'
-              : 'تم تسجيل الإجابة 👍'}
+              ? t('question_result_wrong_title')
+              : t('question_result_recorded_title')}
           </h3>
 
           {/* Message / Details */}
@@ -178,7 +180,7 @@ export default function QuestionModal({
 
             {resultModal.correctLabel && (
               <div className="mt-3 pt-3 border-t border-slate-800/80 text-center">
-                <span className="text-xs text-slate-400 block mb-1">الإجابة الصحيحة هي:</span>
+                <span className="text-xs text-slate-400 block mb-1">{t('question_correct_label')}</span>
                 <span className="text-sm font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3.5 py-1.5 rounded-xl inline-block mt-0.5">
                   {resultModal.correctLabel}
                 </span>
@@ -191,7 +193,7 @@ export default function QuestionModal({
             onClick={handleConfirmResult}
             className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black py-3.5 px-6 rounded-2xl shadow-lg shadow-amber-500/20 active:scale-98 transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
           >
-            <span>إغلاق ومتابعة الدرس</span>
+            <span>{t('question_close_continue')}</span>
             <ArrowLeft className="w-5 h-5" />
           </button>
         </motion.div>
@@ -213,15 +215,14 @@ export default function QuestionModal({
                 <HelpCircle className="w-5 h-5 animate-pulse" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-100">سؤال تفاعلي أثناء التشغيل</h3>
-                <p className="text-[10px] text-slate-400 mt-0.5">يرجى الإجابة بدقة لمتابعة الدرس</p>
+                <h3 className="text-base font-bold text-slate-100">{t('question_interactive_title')}</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">{t('question_interactive_sub')}</p>
               </div>
             </div>
             <button
               type="button"
               onClick={onClose}
               className="p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
-              title="إغلاق وإكمال المشاهدة"
             >
               <X className="w-5 h-5" />
             </button>
@@ -241,7 +242,7 @@ export default function QuestionModal({
 
           {/* Question Text */}
           <h4 className="text-base font-bold text-slate-200 mb-5 leading-relaxed">
-            {question.question || 'سؤال تفاعلي (يرجى اختيار إجابة من القائمة أدناه)'}
+            {question.question || t('question_interactive_title')}
           </h4>
 
           {/* Answer Selection */}
@@ -276,7 +277,7 @@ export default function QuestionModal({
                 type="text"
                 value={textAnswer}
                 onChange={(e) => setTextAnswer(e.target.value)}
-                placeholder="اكتب إجابتك هنا..."
+                placeholder={t('question_placeholder')}
                 disabled={isSubmitting}
                 className="w-full px-4 py-3.5 bg-slate-950 border border-slate-850 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-200 rounded-2xl placeholder-slate-600 outline-none transition-all text-xs text-right"
               />
@@ -294,7 +295,7 @@ export default function QuestionModal({
               >
                 <RotateCcw className="w-4 h-4 text-amber-400 animate-spin-slow" />
                 <span>
-                  {rewatchType === 'audio' ? 'إعادة استماع المقطع السابق' : 'إعادة مشاهدة المقطع السابق'}
+                  {rewatchType === 'audio' ? t('question_rewatch_audio') : t('question_rewatch_video')}
                 </span>
               </button>
             )}
@@ -304,7 +305,7 @@ export default function QuestionModal({
               className="flex-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold py-3.5 rounded-2xl shadow-lg shadow-amber-500/10 active:scale-98 transition-all flex items-center justify-center gap-2 text-[11px] cursor-pointer disabled:opacity-50"
             >
               <Send className="w-4 h-4" />
-              <span>إرسال الإجابة وتأكيد</span>
+              <span>{t('question_submit_btn')}</span>
             </button>
           </div>
         </motion.div>

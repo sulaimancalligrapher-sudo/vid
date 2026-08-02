@@ -6,9 +6,10 @@ import {
   Mic, Image as ImageIcon, ShieldCheck, Lock,
   Trash2, ChevronDown, ChevronUp, Link as LinkIcon, Settings as SettingsIcon,
   HelpCircle, MessageSquare, Calendar, Clock, Eye, EyeOff,
-  UserCheck, Users, UserPlus, User, ChevronLeft, Edit3, Sparkles
+  UserCheck, Users, UserPlus, User, ChevronLeft, Edit3, Sparkles, Globe
 } from 'lucide-react';
 import { AdminQuestionRow, AdminAnswerRow, AdminQuestionItem } from '../types';
+import TranslationEditor from './TranslationEditor';
 import { 
   fetchAdminQuestions, saveAdminQuestion, deleteAdminQuestion, fetchAdminAnswers, 
   updateAdminAnswer, saveBatchAdminQuestions,
@@ -21,7 +22,7 @@ interface AdminPanelProps {
 }
 
 export default function AdminPanel({ onClose }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'questions' | 'answers'>('questions');
+  const [activeTab, setActiveTab] = useState<'questions' | 'answers' | 'translations'>('questions');
 
   // Questions state
   const [questions, setQuestions] = useState<AdminQuestionRow[]>([]);
@@ -661,6 +662,18 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
             <span>ورقة الإجابات والطلاب (Answers)</span>
             <span className="px-2 py-0.5 text-[10px] bg-slate-800 rounded-full font-mono">{answers.length}</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('translations')}
+            className={`px-5 py-3 rounded-t-2xl font-bold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+              activeTab === 'translations'
+                ? 'bg-slate-900 text-amber-400 border-amber-500 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 border-transparent'
+            }`}
+          >
+            <Globe className="w-4 h-4" />
+            <span>محرر نصوص الواجهة والترجمة 🇸🇦🇹🇭🇬🇧</span>
+          </button>
         </div>
 
         {/* Tab Content Body */}
@@ -929,6 +942,13 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* TAB 3: TRANSLATION & TEXT EDITOR */}
+          {activeTab === 'translations' && (
+            <div className="py-2">
+              <TranslationEditor />
             </div>
           )}
         </div>

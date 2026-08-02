@@ -1,20 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Student, WordData } from './types';
-import { fetchLessons, isApiConfigured, getWebAppUrl } from './api';
+import { Student, WordData, HeaderConfig } from './types';
+import { fetchLessons, isApiConfigured, getWebAppUrl, fetchHeaderConfig } from './api';
 import StudentLogin from './components/StudentLogin';
 import LessonList from './components/LessonList';
 import LessonDetail from './components/LessonDetail';
 import SettingsPanel from './components/SettingsPanel';
 import AdminPasswordModal from './components/AdminPasswordModal';
 import AdminPanel from './components/AdminPanel';
+import LanguageSelector from './components/LanguageSelector';
+import { useLanguage } from './translations';
 import { 
   Settings, RefreshCw, BookOpen, Sparkles, Database, Sun, Moon, 
   Lock, ShieldCheck, Copy, CheckCircle2, ArrowLeft, ExternalLink, 
-  KeyRound, Layers, ShieldAlert, FileSpreadsheet, UserCheck
+  KeyRound, Layers, ShieldAlert, FileSpreadsheet, UserCheck,
+  Facebook, Instagram, Youtube
 } from 'lucide-react';
 
+const LineIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M12 2C6.48 2 2 5.82 2 10.53c0 4.22 3.61 7.77 8.48 8.43.33.07.78.22.89.5.1.26.07.66.03.92-.06.4-.26 1.57-.3 1.91-.05.47.22.46.46.3.19-.12 5.18-3.08 7.08-5.28C20.46 15.35 22 13.08 22 10.53 22 5.82 17.52 2 12 2zm7.36 8.49c.35 0 .63.29.63.63s-.28.63-.63.63h-1.26v1.26c0 .35-.28.63-.63.63s-.63-.28-.63-.63v-2.52c0-.35.28-.63.63-.63h1.88zm-4.75 0c.35 0 .63.29.63.63v2.52c0 .35-.28.63-.63.63s-.63-.28-.63-.63v-2.52c0-.35.28-.63.63-.63zm-2.52 0c.35 0 .63.29.63.63v2.52c0 .35-.28.63-.63.63s-.63-.28-.63-.63v-2.52c0-.35.28-.63.63-.63zm-3.27 0h1.26c.35 0 .63.29.63.63s-.28.63-.63.63h-.63v.63h.63c.35 0 .63.29.63.63s-.28.63-.63.63h-1.26c-.35 0-.63-.28-.63-.63v-2.52c0-.35.28-.63.63-.63z" />
+  </svg>
+);
+
 export default function App() {
+  const { t } = useLanguage();
   const [webAppUrl, setWebAppUrl] = useState(getWebAppUrl());
   const [isConfigured, setIsConfigured] = useState(isApiConfigured());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -60,6 +70,19 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Dynamic Header Configuration from 'header' sheet
+  const [headerConfig, setHeaderConfig] = useState<HeaderConfig | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchHeaderConfig().then(cfg => {
+      if (mounted && cfg) {
+        setHeaderConfig(cfg);
+      }
+    });
+    return () => { mounted = false; };
+  }, [webAppUrl, isConfigured]);
+
   // Sync route with URL query param and popstate
   const navigateToPage = (mode: 'student' | 'admin') => {
     setPageMode(mode);
@@ -83,14 +106,25 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Auto-login for student if cookies/localStorage exists
+  // Auto-login for student if cookies/localStorage or URL parameters exist
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlUsername = params.get('username') || params.get('name') || params.get('user') || params.get('student') || params.get('student_name');
+      const urlSheetNumber = params.get('sheet_number') || params.get('sheetNumber') || params.get('number') || params.get('sheet') || params.get('num') || params.get('id');
+
+      if (urlUsername && urlSheetNumber) {
+        localStorage.setItem('loggedInUsername', urlUsername.trim());
+        localStorage.setItem('loggedInSheetNumber', urlSheetNumber.trim());
+      }
+    }
+
     const loggedUsername = localStorage.getItem('loggedInUsername');
     const loggedSheetNumber = localStorage.getItem('loggedInSheetNumber');
     if (loggedUsername && loggedSheetNumber && isConfigured) {
       setStudent({ username: loggedUsername, sheetNumber: loggedSheetNumber });
       setSheetName(loggedSheetNumber);
-      loadStudentLessons(loggedSheetNumber);
+      loadStudentLessons(loggedSheetNumber, loggedUsername);
     }
   }, [webAppUrl, isConfigured]);
 
@@ -178,21 +212,36 @@ export default function App() {
     <div className="bg-gradient-to-br from-[#faf7f2] via-[#f5efe5] to-[#ebf3ed] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col font-sans selection:bg-amber-500/20 selection:text-amber-800 transition-colors duration-300">
       
       {/* ----------------- TOP BANNER HEADER ----------------- */}
-      <header className="bg-[#fefdfa]/90 dark:bg-slate-900/90 border-b border-amber-100/60 dark:border-slate-800 sticky top-0 z-40 backdrop-blur-md px-4 py-4 md:px-6 shadow-sm transition-colors duration-300">
-        <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+      <header className="bg-[#fefdfa]/90 dark:bg-slate-900/90 border-b border-amber-100/60 dark:border-slate-800 sticky top-0 z-40 backdrop-blur-md px-4 py-3.5 md:px-6 shadow-sm transition-colors duration-300">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
           
           {/* Logo / Brand Name depending on Mode */}
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xl font-bold shadow-md ${
-              pageMode === 'admin' 
-                ? 'bg-gradient-to-tr from-purple-500 via-indigo-500 to-indigo-600 shadow-purple-200' 
-                : 'bg-gradient-to-tr from-amber-400 via-orange-400 to-amber-500 shadow-amber-200'
-            }`}>
-              {pageMode === 'admin' ? '⚡' : '📸'}
-            </div>
-            <div className="text-right">
-              <h1 className="text-sm font-bold text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-1.5">
-                <span>{pageMode === 'admin' ? 'بوابة التحكم الإداري وقاعدة البيانات' : 'ملتقط الوسائط للطلاب'}</span>
+          <div className="flex flex-col sm:flex-row items-center gap-2.5 sm:gap-3 text-center sm:text-right">
+            {headerConfig?.logoUrl ? (
+              <img
+                src={headerConfig.logoUrl}
+                alt="Logo"
+                className="w-12 h-12 sm:w-10 sm:h-10 rounded-2xl object-cover shadow-md border border-amber-200/60 dark:border-slate-700/80 bg-white dark:bg-slate-800"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <div className={`w-12 h-12 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center text-2xl sm:text-xl font-bold shadow-md ${
+                pageMode === 'admin' 
+                  ? 'bg-gradient-to-tr from-purple-500 via-indigo-500 to-indigo-600 shadow-purple-200' 
+                  : 'bg-gradient-to-tr from-amber-400 via-orange-400 to-amber-500 shadow-amber-200'
+              }`}>
+                {pageMode === 'admin' ? '⚡' : '📸'}
+              </div>
+            )}
+            <div className="flex flex-col items-center sm:items-start text-center sm:text-right">
+              <h1 className="text-sm sm:text-base font-extrabold text-slate-800 dark:text-slate-100 tracking-tight flex items-center justify-center sm:justify-start gap-1.5">
+                <span>
+                  {pageMode === 'admin'
+                    ? (headerConfig?.title ? `${headerConfig.title} - الإدارة` : 'بوابة التحكم الإداري وقاعدة البيانات')
+                    : (headerConfig?.title || 'ملتقط الوسائط للطلاب')}
+                </span>
                 {pageMode === 'admin' ? (
                   <span className="text-[10px] px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 rounded-full font-bold">
                     ?page=admin
@@ -201,14 +250,38 @@ export default function App() {
                   <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
                 )}
               </h1>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">
-                {pageMode === 'admin' ? 'إدارة الشيت، الأسئلة، وإعدادات الربط' : 'نظام القراءة والواجبات المطور'}
+              <p className="text-[11px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-bold mt-0.5">
+                {pageMode === 'admin'
+                  ? 'إدارة الشيت، الأسئلة، وإعدادات الربط'
+                  : (headerConfig?.subtitle || 'نظام القراءة والواجبات المطور')}
               </p>
             </div>
           </div>
 
-          {/* Quick Controls */}
-          <div className="flex items-center gap-2">
+          {/* Quick Controls & Dynamic Buttons */}
+          <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-end w-full sm:w-auto">
+            {/* Dynamic Buttons from header sheet */}
+            {headerConfig?.buttons && headerConfig.buttons.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap justify-center sm:justify-end">
+                {headerConfig.buttons.map((btn, idx) => (
+                  <a
+                    key={idx}
+                    href={btn.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 dark:from-indigo-600 dark:to-purple-600 dark:hover:from-indigo-700 dark:hover:to-purple-700 text-white font-extrabold rounded-2xl text-xs transition-all shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer whitespace-nowrap"
+                    title={btn.label}
+                  >
+                    <span>{btn.label}</span>
+                    <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                  </a>
+                ))}
+              </div>
+            )}
+
+            {/* Language Switcher Dropdown/Button */}
+            <LanguageSelector />
+
             {/* Night Mode Toggle Button */}
             <button
               onClick={() => setDarkMode(!darkMode)}
@@ -553,10 +626,60 @@ export default function App() {
       {/* ----------------- FOOTER ----------------- */}
       <footer className="bg-[#fefdfa]/90 dark:bg-slate-900/90 border-t border-amber-100/60 dark:border-slate-800 py-6 text-center text-slate-500 dark:text-slate-400 text-xs select-none shadow-inner transition-colors duration-300">
         <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p dir="rtl" className="font-semibold text-slate-600 dark:text-slate-300">
-            تطبيق ويب تفاعلي متقدم لتعليم الأطفال القراءة 📚
+          {/* Social Links if configured */}
+          <div className="flex items-center gap-2.5 flex-wrap justify-center">
+            {headerConfig?.socials?.facebook && (
+              <a
+                href={headerConfig.socials.facebook}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="فيس بوك"
+                className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-2xl transition-all shadow-sm hover:scale-110 active:scale-95"
+              >
+                <Facebook className="w-5 h-5 text-blue-600" />
+              </a>
+            )}
+
+            {headerConfig?.socials?.instagram && (
+              <a
+                href={headerConfig.socials.instagram}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="انستغرام"
+                className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-pink-600 dark:hover:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950/50 rounded-2xl transition-all shadow-sm hover:scale-110 active:scale-95"
+              >
+                <Instagram className="w-5 h-5 text-pink-600" />
+              </a>
+            )}
+
+            {headerConfig?.socials?.youtube && (
+              <a
+                href={headerConfig.socials.youtube}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="يوتيوب"
+                className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-2xl transition-all shadow-sm hover:scale-110 active:scale-95"
+              >
+                <Youtube className="w-5 h-5 text-red-600" />
+              </a>
+            )}
+
+            {headerConfig?.socials?.line && (
+              <a
+                href={headerConfig.socials.line}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="تطبيق لاين"
+                className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-2xl transition-all shadow-sm hover:scale-110 active:scale-95"
+              >
+                <LineIcon className="w-5 h-5 text-emerald-500" />
+              </a>
+            )}
+          </div>
+
+          <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400 font-bold">
+            © 2026 سليمان ادم الخطاط
           </p>
-          <p className="font-mono text-[10px] text-slate-400 dark:text-slate-500">© 2026 ملتقط الوسائط وقارئ الدروس</p>
         </div>
       </footer>
 

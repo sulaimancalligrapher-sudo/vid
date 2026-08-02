@@ -227,6 +227,8 @@ function doGet(e) {
       response = { link: getRecordingLink(e.parameter.comment, e.parameter.sheet_number, e.parameter.username, e.parameter.word) };
     } else if (action === 'getImageLink') {
       response = { link: getImageLink(e.parameter.comment, e.parameter.sheet_number, e.parameter.username, e.parameter.word) };
+    } else if (action === 'getHeaderConfig' || action === 'getHeader') {
+      response = getHeaderConfig();
     } else if (action === 'getAdminQuestions') {
       response = getAdminQuestions();
     } else if (action === 'getAdminAnswers') {
@@ -333,6 +335,46 @@ function getData() {
     contact: contactData.slice(1),
     about: aboutData.slice(1),
     header: headerData
+  };
+}
+
+function getHeaderConfig() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('header') || ss.getSheetByName('Header');
+  if (!sheet) return { title: '', subtitle: '', logoUrl: '', buttons: [], socials: {} };
+  var data = sheet.getDataRange().getValues();
+  if (!data || data.length === 0) return { title: '', subtitle: '', logoUrl: '', buttons: [], socials: {} };
+
+  var title = (data.length > 1 && data[1].length > 1 && data[1][1]) ? data[1][1].toString().trim() : '';
+  var logoUrl = (data.length > 1 && data[1].length > 2 && data[1][2]) ? data[1][2].toString().trim() : '';
+  var subtitle = (data.length > 2 && data[2].length > 1 && data[2][1]) ? data[2][1].toString().trim() : '';
+
+  // Socials row 2 (index 1): E2 (col 4), F2 (col 5), G2 (col 6), H2 (col 7)
+  var facebook = (data.length > 1 && data[1].length > 4 && data[1][4]) ? data[1][4].toString().trim() : '';
+  var instagram = (data.length > 1 && data[1].length > 5 && data[1][5]) ? data[1][5].toString().trim() : '';
+  var youtube = (data.length > 1 && data[1].length > 6 && data[1][6]) ? data[1][6].toString().trim() : '';
+  var line = (data.length > 1 && data[1].length > 7 && data[1][7]) ? data[1][7].toString().trim() : '';
+
+  var buttons = [];
+  for (var r = 3; r <= 7 && r < data.length; r++) {
+    var btnLabel = (data[r].length > 1 && data[r][1]) ? data[r][1].toString().trim() : 'رابط';
+    var btnUrl = (data[r].length > 2 && data[r][2]) ? data[r][2].toString().trim() : '';
+    if (btnUrl && btnUrl.length > 0 && btnUrl.toLowerCase() !== 'undefined' && btnUrl.toLowerCase() !== 'null') {
+      buttons.push({ label: btnLabel, url: btnUrl });
+    }
+  }
+
+  return {
+    title: title,
+    subtitle: subtitle,
+    logoUrl: logoUrl,
+    buttons: buttons,
+    socials: {
+      facebook: facebook,
+      instagram: instagram,
+      youtube: youtube,
+      line: line
+    }
   };
 }
 

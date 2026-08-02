@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { WordData } from '../types';
 import { LogOut, BookOpen, CheckCircle, RefreshCw, Star, PlayCircle, Lock, Eye, EyeOff } from 'lucide-react';
 import { decrementRetryCount, unmarkLessonCompleted } from '../api';
+import { useLanguage } from '../translations';
 
 interface LessonListProps {
   username: string;
@@ -23,7 +24,7 @@ export default function LessonList({
   onRefresh,
   loading,
 }: LessonListProps) {
-
+  const { t } = useLanguage();
   const [hideCompleted, setHideCompleted] = React.useState<boolean>(true);
   const [expandedComments, setExpandedComments] = React.useState<Record<number, boolean>>({});
   const [resetModalLesson, setResetModalLesson] = React.useState<{ index: number; lesson: WordData } | null>(null);
@@ -46,13 +47,10 @@ export default function LessonList({
     let cleanStr = dateStr.trim();
     if (!cleanStr) return null;
     
-    // Convert Arabic/Eastern digits to Western digits
     cleanStr = cleanStr.replace(/[٠١٢٣٤٥٦٧٨٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
 
-    // 1. Direct native JavaScript Date parsing
     const directDate = new Date(cleanStr);
     if (!isNaN(directDate.getTime())) {
-      // If time was omitted (e.g. "2026-08-01"), set to start or end of day
       if (!cleanStr.includes(':') && !cleanStr.includes('T') && !cleanStr.includes(' ')) {
         if (isEnd) {
           directDate.setHours(23, 59, 59, 999);
@@ -63,7 +61,6 @@ export default function LessonList({
       return directDate;
     }
 
-    // 2. Match YYYY-MM-DD or YYYY/MM/DD
     const isoMatch = cleanStr.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
     if (isoMatch) {
       const y = parseInt(isoMatch[1], 10);
@@ -75,7 +72,6 @@ export default function LessonList({
       return new Date(y, m, d, h, mi, s);
     }
 
-    // 3. Match DD/MM/YYYY or DD-MM-YYYY
     const dmyMatch = cleanStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
     if (dmyMatch) {
       const d = parseInt(dmyMatch[1], 10);
@@ -97,22 +93,20 @@ export default function LessonList({
 
     const startDate = parseFlexibleDate(l.startDate, false);
     if (startDate && now < startDate) {
-      return false; // Lesson has not reached its start date yet
+      return false;
     }
 
-    // Check explicit endDate
     const endDate = parseFlexibleDate(l.endDate, true);
     if (endDate && now > endDate) {
-      return false; // Lesson has expired past its explicit end date
+      return false;
     }
 
-    // Check expireAfterDays (number of days after startDate)
     if (startDate && hasDays) {
       const days = typeof l.expireAfterDays === 'number' ? l.expireAfterDays : parseFloat(String(l.expireAfterDays));
       if (!isNaN(days) && days > 0) {
         const calculatedExpiry = new Date(startDate.getTime() + days * 24 * 60 * 60 * 1000);
         if (now > calculatedExpiry) {
-          return false; // Lesson expired based on days limit
+          return false;
         }
       }
     }
@@ -133,7 +127,7 @@ export default function LessonList({
   }, [lessonsWithIndex, hideCompleted]);
 
   const toggleComment = (e: React.MouseEvent, idx: number) => {
-    e.stopPropagation(); // Avoid triggering onSelectLesson
+    e.stopPropagation();
     setExpandedComments(prev => ({
       ...prev,
       [idx]: !prev[idx]
@@ -184,7 +178,7 @@ export default function LessonList({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-4 md:p-6 text-right font-sans" dir="rtl">
+    <div className="w-full max-w-4xl mx-auto p-4 md:p-6 text-right font-sans">
       {/* Student Profile Ribbon */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -197,7 +191,7 @@ export default function LessonList({
           </div>
           <div>
             <h2 className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{username}</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-0.5">شيت الطالب: #{sheetNumber}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-0.5">{t('student_sheet_badge')} #{sheetNumber}</p>
           </div>
         </div>
 
@@ -207,7 +201,7 @@ export default function LessonList({
             className="w-full sm:w-auto px-5 py-2.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/50 text-rose-500 dark:text-rose-400 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-xs cursor-pointer shadow-sm"
           >
             <LogOut className="w-4 h-4" />
-            <span>خروج</span>
+            <span>{t('logout_btn')}</span>
           </button>
         </div>
       </motion.div>
@@ -218,7 +212,7 @@ export default function LessonList({
           <div className="p-2.5 bg-amber-400 text-slate-900 rounded-2xl shadow-sm">
             <BookOpen className="w-5 h-5" />
           </div>
-          <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100">دروس القراءة التفاعلية المتاحة</h3>
+          <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{t('available_lessons_title')}</h3>
         </div>
 
         <div className="flex items-center gap-2">
@@ -232,14 +226,14 @@ export default function LessonList({
               }`}
             >
               {hideCompleted ? <EyeOff className="w-4 h-4 text-amber-600 dark:text-amber-400" /> : <Eye className="w-4 h-4 text-indigo-500" />}
-              <span>{hideCompleted ? `إظهار الدروس المكتملة (${completedCount})` : 'إخفاء الدروس المكتملة'}</span>
+              <span>{hideCompleted ? `${t('show_completed')} (${completedCount})` : t('hide_completed')}</span>
             </button>
           )}
 
           {loading && (
             <div className="text-xs text-indigo-600 dark:text-indigo-400 font-bold animate-pulse flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl">
               <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
-              <span>جاري المزامنة...</span>
+              <span>{t('syncing_status')}</span>
             </div>
           )}
         </div>
@@ -249,19 +243,19 @@ export default function LessonList({
       {lessons.length === 0 ? (
         <div className="bg-[#fefcf8] dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-3xl p-12 text-center text-slate-500 dark:text-slate-400 shadow-md">
           <span className="text-4xl">📭</span>
-          <p className="mt-3 text-sm font-semibold">لا توجد دروس مخصصة لك في هذا الشيت حالياً.</p>
+          <p className="mt-3 text-sm font-semibold">{t('no_lessons_msg')}</p>
         </div>
       ) : displayedLessons.length === 0 ? (
         <div className="bg-[#fefcf8] dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-3xl p-10 text-center shadow-md">
           <span className="text-4xl">🎉</span>
-          <h4 className="text-base font-extrabold text-emerald-700 dark:text-emerald-400 mt-2">أحسنت! جميع الدروس المتاحة مكتملة</h4>
-          <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-1">تم إخفاء الدروس المكتملة تلقائياً للتسهيل عليك.</p>
+          <h4 className="text-base font-extrabold text-emerald-700 dark:text-emerald-400 mt-2">{t('all_completed_title')}</h4>
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-1">{t('all_completed_sub')}</p>
           <button
             onClick={() => setHideCompleted(false)}
             className="mt-4 px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold text-xs rounded-xl shadow-sm transition-all cursor-pointer inline-flex items-center gap-1.5"
           >
             <Eye className="w-4 h-4" />
-            <span>عرض الدروس المكتملة ({completedCount})</span>
+            <span>{t('show_completed')} ({completedCount})</span>
           </button>
         </div>
       ) : (
@@ -270,9 +264,9 @@ export default function LessonList({
             <table className="w-full text-right border-collapse">
               <thead>
                 <tr className="bg-amber-50/40 dark:bg-slate-950/40 border-b border-amber-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-extrabold">
-                  <th className="px-3 py-4 md:px-6">اسم وموضوع الدرس</th>
-                  <th className="px-3 py-4 md:px-6 text-center">حالة الإنجاز</th>
-                  <th className="px-3 py-4 md:px-6 text-center">إعادة محاولة</th>
+                  <th className="px-3 py-4 md:px-6">{t('table_col_lesson')}</th>
+                  <th className="px-3 py-4 md:px-6 text-center">{t('table_col_status')}</th>
+                  <th className="px-3 py-4 md:px-6 text-center">{t('table_col_retry')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-amber-100/40 dark:divide-slate-800/60">
@@ -280,7 +274,6 @@ export default function LessonList({
                   const idx = lesson.originalIndex;
                   const isCompleted = lesson.completed === 'تم';
                   
-                  // Reset condition from apps script
                   let showReset = isCompleted && lesson.retryResetCount > 0;
                   if (lesson.resetCondition === 'نعم') {
                     showReset = showReset && lesson.dzValue === 'تم';
@@ -311,13 +304,11 @@ export default function LessonList({
                             <PlayCircle className="w-4 h-4 md:w-5 md:h-5" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            {/* Tap to expand for mobile */}
                             <div 
                               onClick={(e) => {
                                 if (hasMoreThanTwoWords(commentText)) {
                                   toggleComment(e, idx);
                                 } else {
-                                  // Click normal to open lesson
                                   onSelectLesson(idx, false);
                                 }
                               }}
@@ -334,14 +325,14 @@ export default function LessonList({
                                   <span className="inline-flex items-center gap-1">
                                     <span>{getTwoWordsOrFull(commentText)}</span>
                                     <span className="text-[9px] text-indigo-500 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/50 px-1 py-0.5 rounded font-normal font-sans hover:bg-amber-100">
-                                      + تفاصيل
+                                      {t('more_details')}
                                     </span>
                                   </span>
                                 )}
                               </span>
                             </div>
                             <span className="text-[9px] md:text-[10px] text-slate-500 dark:text-slate-400 font-bold mt-1 block">
-                              الكلمة المستهدفة: {lesson.word}
+                              {t('target_word')} {lesson.word}
                             </span>
                           </div>
                         </div>
@@ -353,12 +344,12 @@ export default function LessonList({
                           {isCompleted ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-full">
                               <CheckCircle className="w-3.5 h-3.5 hidden sm:inline" />
-                              <span>تم</span>
+                              <span>{t('status_completed')}</span>
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-600 dark:text-amber-400 text-xs font-bold rounded-full">
                               <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse hidden sm:inline" />
-                              <span>جديد</span>
+                              <span>{t('status_new')}</span>
                             </span>
                           )}
                         </div>
@@ -373,12 +364,12 @@ export default function LessonList({
                               className="px-2 py-1 md:px-3 md:py-1.5 bg-amber-400 hover:bg-amber-500 border border-amber-300 text-slate-900 text-[10px] md:text-xs font-extrabold rounded-xl transition-all flex items-center gap-1 active:scale-95 cursor-pointer shadow-sm shrink-0"
                             >
                               <RefreshCw className="w-3 h-3 md:w-3.5 md:h-3.5 animate-spin-hover" />
-                              <span>إعادة ({lesson.retryResetCount})</span>
+                              <span>{t('retry_button')} ({lesson.retryResetCount})</span>
                             </button>
                           ) : isCompleted ? (
                             <span className="text-slate-400 dark:text-slate-500 text-[10px] md:text-[11px] flex items-center gap-1 justify-center font-bold">
                               <Lock className="w-3 h-3 text-slate-400 dark:text-slate-500" />
-                              <span className="hidden sm:inline">مغلق</span>
+                              <span className="hidden sm:inline">{t('status_locked')}</span>
                             </span>
                           ) : (
                             <span className="text-slate-400 dark:text-slate-500 font-mono text-xs">-</span>
@@ -394,10 +385,10 @@ export default function LessonList({
         </div>
       )}
 
-      {/* Loading overlay when refreshing or loading lessons */}
+      {/* Loading overlay */}
       <AnimatePresence>
         {loading && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md select-none pointer-events-auto" dir="rtl">
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md select-none pointer-events-auto">
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -406,8 +397,7 @@ export default function LessonList({
             >
               <div className="w-12 h-12 border-4 border-amber-200 dark:border-slate-800 border-t-amber-500 rounded-full animate-spin" />
               <div>
-                <h4 className="text-sm font-extrabold text-slate-800 dark:text-slate-100">جاري قراءة وتحديث الدروس...</h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-bold mt-1">يرجى الانتظار لقراءة حالة التقدم الجديدة من الشيت</p>
+                <h4 className="text-sm font-extrabold text-slate-800 dark:text-slate-100">{t('loading_lessons_title')}</h4>
               </div>
             </motion.div>
           </div>
@@ -417,7 +407,7 @@ export default function LessonList({
       {/* Reset Confirmation Modal */}
       <AnimatePresence>
         {resetModalLesson && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" dir="rtl">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -429,7 +419,7 @@ export default function LessonList({
                   <RefreshCw className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">إعادة محاولة الدرس</h3>
+                  <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">{t('retry_modal_title')}</h3>
                   <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold mt-0.5">
                     {resetModalLesson.lesson.comment || 'درس غير معنون'}
                   </p>
@@ -437,10 +427,10 @@ export default function LessonList({
               </div>
 
               <p className="text-xs md:text-sm text-slate-600 dark:text-slate-300 font-medium leading-relaxed my-4">
-                هل أنت متأكد من رغبتك في إعادة المحاولة لهذا الدرس؟
+                {t('retry_modal_confirm')}
                 <br />
                 <span className="text-amber-600 dark:text-amber-400 font-bold block mt-1">
-                  سيؤدي ذلك إلى استهلاك محاولة واحدة من محاولاتك المتاحة (المتبقي: {resetModalLesson.lesson.retryResetCount}).
+                  {t('retry_modal_sub')} (المتبقي: {resetModalLesson.lesson.retryResetCount}).
                 </span>
               </p>
 
@@ -456,7 +446,7 @@ export default function LessonList({
                   disabled={resetting}
                   className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-xl text-xs transition-all cursor-pointer"
                 >
-                  إلغاء
+                  {t('cancel_btn')}
                 </button>
                 <button
                   onClick={handleConfirmReset}
@@ -466,12 +456,12 @@ export default function LessonList({
                   {resetting ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>جاري إعادة التعيين...</span>
+                      <span>...</span>
                     </>
                   ) : (
                     <>
                       <RefreshCw className="w-4 h-4" />
-                      <span>نعم، أعد المحاولة</span>
+                      <span>{t('confirm_retry_btn')}</span>
                     </>
                   )}
                 </button>
@@ -483,3 +473,4 @@ export default function LessonList({
     </div>
   );
 }
+

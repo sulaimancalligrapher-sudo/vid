@@ -1,4 +1,4 @@
-import { WordData, AdminQuestionRow, AdminAnswerRow, Question, AdminQuestionItem } from './types';
+import { WordData, AdminQuestionRow, AdminAnswerRow, Question, AdminQuestionItem, HeaderNavButton, HeaderConfig } from './types';
 
 // Helper to get Web App URL from localStorage or environment variables
 export function getWebAppUrl(): string {
@@ -745,3 +745,166 @@ export async function updateAdminAnswer(payload: {
   }
   return fetchGas({ action: 'updateAdminAnswer' }, 'POST', payload);
 }
+
+// 23. Fetch Dynamic Header Configuration from 'header' sheet tab
+export function parseHeaderResponse(res: any): HeaderConfig {
+  if (!res) return {};
+
+  // Case A: Response is an Object (e.g. { title, subtitle, logoUrl, buttons, socials })
+  if (typeof res === 'object' && !Array.isArray(res)) {
+    const title = res.title || res.B2 || res.b2 || res.subject || '';
+    const subtitle = res.subtitle || res.B3 || res.b3 || res.description || '';
+    const logoUrl = res.logoUrl || res.logo || res.C2 || res.c2 || '';
+
+    let buttons: HeaderNavButton[] = [];
+    if (Array.isArray(res.buttons)) {
+      buttons = res.buttons
+        .filter((b: any) => b && (b.url || b.link) && String(b.url || b.link).trim().length > 0)
+        .map((b: any) => ({
+          label: String(b.label || b.text || b.title || b.name || '').trim() || 'رابط',
+          url: String(b.url || b.link).trim()
+        }));
+    } else {
+      const pairKeys = [
+        ['B4', 'C4'],
+        ['B5', 'C5'],
+        ['B6', 'C6'],
+        ['B7', 'C7'],
+        ['B8', 'C8'],
+      ];
+      for (const [bKey, cKey] of pairKeys) {
+        const url = String(res[cKey] || res[cKey.toLowerCase()] || '').trim();
+        if (url && url.length > 0 && url.toLowerCase() !== 'undefined' && url.toLowerCase() !== 'null') {
+          const label = String(res[bKey] || res[bKey.toLowerCase()] || '').trim() || 'رابط';
+          buttons.push({ label, url });
+        }
+      }
+    }
+
+    const socials = {
+      facebook: String(res.socials?.facebook || res.E2 || res.e2 || '').trim(),
+      instagram: String(res.socials?.instagram || res.F2 || res.f2 || '').trim(),
+      youtube: String(res.socials?.youtube || res.G2 || res.g2 || '').trim(),
+      line: String(res.socials?.line || res.H2 || res.h2 || '').trim()
+    };
+
+    return {
+      title: title ? String(title).trim() : undefined,
+      subtitle: subtitle ? String(subtitle).trim() : undefined,
+      logoUrl: logoUrl ? String(logoUrl).trim() : undefined,
+      buttons,
+      socials
+    };
+  }
+
+  // Case B: Response is 2D Array of rows from Google Sheets
+  if (Array.isArray(res)) {
+    const getCellValue = (rIdx: number, cIdx: number): string => {
+      if (rIdx < 0 || rIdx >= res.length) return '';
+      const row = res[rIdx];
+      if (Array.isArray(row) && row.length > cIdx) {
+        const val = row[cIdx];
+        if (val !== null && val !== undefined) {
+          const s = String(val).trim();
+          if (s !== 'undefined' && s !== 'null') return s;
+        }
+      }
+      return '';
+    };
+
+    // Row 2 in Sheet is index 1 (0-indexed). Cell B2 = col 1, C2 = col 2.
+    // If array starts directly at Row 2, then index 0.
+    let title = getCellValue(1, 1) || getCellValue(0, 1);
+    let logoUrl = getCellValue(1, 2) || getCellValue(0, 2);
+    let subtitle = getCellValue(2, 1) || getCellValue(1, 1);
+
+    // Socials row 2 (index 1): E2 (col 4), F2 (col 5), G2 (col 6), H2 (col 7)
+    let facebook = getCellValue(1, 4) || getCellValue(0, 4);
+    let instagram = getCellValue(1, 5) || getCellValue(0, 5);
+    let youtube = getCellValue(1, 6) || getCellValue(0, 6);
+    let line = getCellValue(1, 7) || getCellValue(0, 7);
+
+    // Header label check
+    if (getCellValue(0, 1) === 'الموضوع' || title === 'الموضوع') {
+      title = getCellValue(1, 1);
+      logoUrl = getCellValue(1, 2);
+      subtitle = getCellValue(2, 1);
+      facebook = getCellValue(1, 4);
+      instagram = getCellValue(1, 5);
+      youtube = getCellValue(1, 6);
+      line = getCellValue(1, 7);
+    }
+
+    const buttons: HeaderNavButton[] = [];
+    // Buttons B4..B8 (col 1) and C4..C8 (col 2)
+    // Sheet Rows 4, 5, 6, 7, 8 -> 0-based indices 3, 4, 5, 6, 7
+    for (let sheetRow = 4; sheetRow <= 8; sheetRow++) {
+      let rIdx = sheetRow - 1;
+      let btnLabel = getCellValue(rIdx, 1);
+      let btnUrl = getCellValue(rIdx, 2);
+
+      // If array offset shift
+      if (!btnUrl && res.length > sheetRow) {
+        btnLabel = getCellValue(sheetRow, 1);
+        btnUrl = getCellValue(sheetRow, 2);
+      }
+
+      if (btnUrl && btnUrl.length > 0 && btnUrl.toLowerCase() !== 'undefined' && btnUrl.toLowerCase() !== 'null') {
+        buttons.push({
+          label: btnLabel || 'رابط',
+          url: btnUrl
+        });
+      }
+    }
+
+    return {
+      title: title || undefined,
+      subtitle: subtitle || undefined,
+      logoUrl: logoUrl || undefined,
+      buttons,
+      socials: {
+        facebook: facebook || undefined,
+        instagram: instagram || undefined,
+        youtube: youtube || undefined,
+        line: line || undefined
+      }
+    };
+  }
+
+  return {};
+}
+
+export async function fetchHeaderConfig(): Promise<HeaderConfig> {
+  const cached = localStorage.getItem('headerConfigCache');
+  let fallbackConfig: HeaderConfig = {};
+  if (cached) {
+    try {
+      fallbackConfig = JSON.parse(cached);
+    } catch (e) {}
+  }
+
+  if (!isApiConfigured()) {
+    return fallbackConfig;
+  }
+
+  try {
+    let res = await fetchGas({ action: 'getHeaderConfig' });
+    let parsed = parseHeaderResponse(res);
+
+    if (!parsed.title && !parsed.logoUrl && (!parsed.buttons || parsed.buttons.length === 0)) {
+      // Retry with action 'getHeader'
+      res = await fetchGas({ action: 'getHeader' });
+      parsed = parseHeaderResponse(res);
+    }
+
+    if (parsed.title || parsed.logoUrl || (parsed.buttons && parsed.buttons.length > 0)) {
+      localStorage.setItem('headerConfigCache', JSON.stringify(parsed));
+      return parsed;
+    }
+  } catch (e) {
+    console.warn('Could not fetch dynamic header config from GAS, using cached config if available:', e);
+  }
+
+  return fallbackConfig;
+}
+

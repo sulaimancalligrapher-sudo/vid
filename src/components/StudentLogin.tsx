@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { User, FileSpreadsheet, KeyRound, AlertCircle, Settings, MapPin, Loader2 } from 'lucide-react';
 import { loginStudent } from '../api';
+import { useLanguage } from '../translations';
 
 interface StudentLoginProps {
   onLoginSuccess: (username: string, sheetNumber: string, sheetName: string) => void;
@@ -18,20 +19,37 @@ export default function StudentLogin({
   isAdminUnlocked, 
   onUnlockAdmin 
 }: StudentLoginProps) {
-  const [username, setUsername] = useState(localStorage.getItem('loggedInUsername') || '');
-  const [sheetNumber, setSheetNumber] = useState(localStorage.getItem('loggedInSheetNumber') || '');
+  const { t } = useLanguage();
+  const [username, setUsername] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlUser = params.get('username') || params.get('name') || params.get('user') || params.get('student') || params.get('student_name');
+      if (urlUser) return urlUser.trim();
+    }
+    return localStorage.getItem('loggedInUsername') || '';
+  });
+
+  const [sheetNumber, setSheetNumber] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlSheet = params.get('sheet_number') || params.get('sheetNumber') || params.get('number') || params.get('sheet') || params.get('num') || params.get('id');
+      if (urlSheet) return urlSheet.trim();
+    }
+    return localStorage.getItem('loggedInSheetNumber') || '';
+  });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoAttempted, setAutoAttempted] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const executeLogin = async (userVal: string, sheetVal: string) => {
     if (!isConfigured) {
       setError('يرجى تهيئة رابط اتصال قاعدة البيانات (Google Sheet) أولاً من الإعدادات ⚙️.');
       return;
     }
 
-    if (!username.trim() || !sheetNumber.trim()) {
-      setError('يرجى ملء جميع الحقول المطلوبة للدخول.');
+    if (!userVal.trim() || !sheetVal.trim()) {
+      setError(t('login_error_missing'));
       return;
     }
 
@@ -60,12 +78,12 @@ export default function StudentLogin({
     }
 
     try {
-      const result = await loginStudent(username.trim(), sheetNumber.trim(), deviceId, coords);
+      const result = await loginStudent(userVal.trim(), sheetVal.trim(), deviceId, coords);
       if (result && result.success) {
         // Save in localStorage
-        localStorage.setItem('loggedInUsername', username.trim());
-        localStorage.setItem('loggedInSheetNumber', sheetNumber.trim());
-        onLoginSuccess(username.trim(), sheetNumber.trim(), result.sheetName);
+        localStorage.setItem('loggedInUsername', userVal.trim());
+        localStorage.setItem('loggedInSheetNumber', sheetVal.trim());
+        onLoginSuccess(userVal.trim(), sheetVal.trim(), result.sheetName);
       } else {
         setError(result?.message || 'اسم الطالب أو رقم الورقة غير صحيح، أو تم منع هذا المستخدم.');
       }
@@ -76,6 +94,27 @@ export default function StudentLogin({
       setLoading(false);
     }
   };
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    executeLogin(username, sheetNumber);
+  };
+
+  // Auto-login if URL parameters exist
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const urlUser = params.get('username') || params.get('name') || params.get('user') || params.get('student') || params.get('student_name');
+    const urlSheet = params.get('sheet_number') || params.get('sheetNumber') || params.get('number') || params.get('sheet') || params.get('num') || params.get('id');
+
+    if (urlUser) setUsername(urlUser.trim());
+    if (urlSheet) setSheetNumber(urlSheet.trim());
+
+    if (urlUser && urlSheet && isConfigured && !autoAttempted) {
+      setAutoAttempted(true);
+      executeLogin(urlUser.trim(), urlSheet.trim());
+    }
+  }, [isConfigured, autoAttempted]);
 
   return (
     <div className="flex-grow flex items-center justify-center p-4">
@@ -92,8 +131,8 @@ export default function StudentLogin({
 
         <div className="text-center mb-8 relative">
           <span className="text-5xl">🎓</span>
-          <h1 className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-3">بوابة دخول الطالب</h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-1">تعلّم القراءة وأرسل واجباتك التفاعلية بسهولة</p>
+          <h1 className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-3">{t('login_title')}</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-1">{t('login_subtitle')}</p>
         </div>
 
         {/* Warning if Sheet connection is not configured */}
@@ -115,15 +154,15 @@ export default function StudentLogin({
         )}
 
         {/* Form */}
-        <form onSubmit={handleLogin} className="space-y-5 text-right" dir="rtl">
+        <form onSubmit={handleLogin} className="space-y-5 text-right">
           <div>
-            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">اسم الطالب الثلاثي:</label>
+            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">{t('login_username_label')}</label>
             <div className="relative">
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="أدخل اسمك بالكامل"
+                placeholder={t('login_username_placeholder')}
                 disabled={loading}
                 className="w-full px-4 py-3.5 bg-slate-50/50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100 rounded-2xl placeholder-slate-400 dark:placeholder-slate-600 outline-none transition-all pr-12 text-sm disabled:opacity-50 font-medium"
               />
@@ -132,13 +171,13 @@ export default function StudentLogin({
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">رقم الورقة / شيت الطالب (Sheet Number):</label>
+            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">{t('login_sheet_label')}</label>
             <div className="relative">
               <input
                 type="text"
                 value={sheetNumber}
                 onChange={(e) => setSheetNumber(e.target.value)}
-                placeholder="أدخل رقم شيت الطالب الخاص بك"
+                placeholder={t('login_sheet_placeholder')}
                 disabled={loading}
                 className="w-full px-4 py-3.5 bg-slate-50/50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100 rounded-2xl placeholder-slate-400 dark:placeholder-slate-600 outline-none transition-all pr-12 text-sm disabled:opacity-50 font-medium"
               />
@@ -167,12 +206,12 @@ export default function StudentLogin({
             {loading ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>جاري التحقق من الهوية والموقع...</span>
+                <span>{t('login_loading')}</span>
               </>
             ) : (
               <>
                 <KeyRound className="w-5 h-5" />
-                <span>دخول آمن للبوابة 🔐</span>
+                <span>{t('login_btn')}</span>
               </>
             )}
           </button>
@@ -181,3 +220,4 @@ export default function StudentLogin({
     </div>
   );
 }
+
