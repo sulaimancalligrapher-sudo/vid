@@ -10,12 +10,14 @@ interface SettingsPanelProps {
 
 export default function SettingsPanel({ onClose, onSave }: SettingsPanelProps) {
   const [url, setUrl] = useState(getWebAppUrl());
+  const [corrSheetId, setCorrSheetId] = useState(() => localStorage.getItem('correctionSheetId') || '1F3hDUfjgBEkUAIOaF66634EWQQ8XZSdyKjlTzrVA25k');
   const [copied, setCopied] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const handleSave = () => {
     localStorage.setItem('webAppUrl', url);
+    localStorage.setItem('correctionSheetId', corrSheetId.trim());
     onSave(url);
     onClose();
   };
@@ -84,7 +86,7 @@ export default function SettingsPanel({ onClose, onSave }: SettingsPanelProps) {
           </button>
         </div>
 
-        {/* Input Field */}
+        {/* Input Fields */}
         <div className="space-y-4 mb-6 text-right" dir="rtl">
           <div>
             <label className="block text-sm font-semibold text-slate-300 mb-2">رابط تطبيق Google Apps Script (Web App URL):</label>
@@ -99,6 +101,26 @@ export default function SettingsPanel({ onClose, onSave }: SettingsPanelProps) {
               />
               <Globe className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-300 mb-2">
+              معرّف شيت التصحيح الخارجي (Correction Sheet ID):
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                dir="ltr"
+                value={corrSheetId}
+                onChange={(e) => setCorrSheetId(e.target.value)}
+                placeholder="1F3hDUfjgBEkUAIOaF66634EWQQ8XZSdyKjlTzrVA25k"
+                className="w-full px-4 py-3.5 bg-slate-950 border border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-200 rounded-xl placeholder-slate-600 outline-none transition-all pr-12 text-sm font-mono"
+              />
+              <Settings className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-amber-500" />
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">
+              يقرأ التطبيق بيانات تصحيح الأستاذ وملاحظات الصوت والصورة من هذا الشيت (ورقة A1).
+            </p>
           </div>
 
           {/* Test & Save Actions */}
@@ -209,6 +231,7 @@ function getFullAppsScriptCode(): string {
  */
 
 var SPREADSHEET_ID = '1967wIJrB-0hVLHxH6rdkZbscO2S7GwxlHObtsmWFnFU'; // معرف جدول البيانات الجديد
+var CORRECTION_SPREADSHEET_ID = '1F3hDUfjgBEkUAIOaF66634EWQQ8XZSdyKjlTzrVA25k'; // معرف شيت تصحيح الأستاذ
 
 function doGet(e) {
   var action = e.parameter.action;
@@ -219,6 +242,8 @@ function doGet(e) {
       var sheetName = e.parameter.sheetName;
       var username = e.parameter.username;
       response = getWords(sheetName, username);
+    } else if (action === 'getCorrections') {
+      response = getStudentCorrections(e.parameter.username, e.parameter.sheetNumber, e.parameter.corrSheetId || e.parameter.correctionSheetId);
     } else if (action === 'getFullAudioScore') {
       response = { score: getFullAudioScore(e.parameter.comment, e.parameter.sheet_number, e.parameter.username, e.parameter.word) };
     } else if (action === 'getLetterListenScore') {
@@ -1372,7 +1397,8 @@ function getAdminAnswers() {
         imageLink: row[32] ? row[32].toString().trim() : '',
         audioUploadCount: (row[36] !== undefined && row[36] !== null && row[36] !== '') ? parseInt(row[36].toString().trim()) : 0,
         imageUploadCount: (row[37] !== undefined && row[37] !== null && row[37] !== '') ? parseInt(row[37].toString().trim()) : 0,
-        finalResult: row[38] ? row[38].toString().trim() : '',
+        finalFormula: row[38] ? row[38].toString().trim() : '',
+        finalResult: row[39] ? row[39].toString().trim() : '',
         completed: row[40] ? row[40].toString().trim() : '',
         retryResetCount: (row[41] !== undefined && row[41] !== null && row[41] !== '') ? parseInt(row[41].toString().trim()) : null
       });
@@ -1400,8 +1426,11 @@ function updateAdminAnswer(payload) {
   if (payload.imageUploadCount !== undefined && payload.imageUploadCount !== null) {
     sheet.getRange(rowIndex, 38).setValue(payload.imageUploadCount); // العمود AL (38)
   }
+  if (payload.finalFormula !== undefined) {
+    sheet.getRange(rowIndex, 39).setValue(payload.finalFormula); // العمود AM (39)
+  }
   if (payload.finalResult !== undefined) {
-    sheet.getRange(rowIndex, 39).setValue(payload.finalResult); // العمود AM (39)
+    sheet.getRange(rowIndex, 40).setValue(payload.finalResult); // العمود AN (40)
   }
   if (payload.completed !== undefined) {
     sheet.getRange(rowIndex, 41).setValue(payload.completed); // العمود AO (41)
@@ -1554,6 +1583,81 @@ function getCommentForWord(sheetName, word) {
     // ignore
   }
   return word;
+}
+
+function getStudentCorrections(username, sheetNumber, customCorrId) {
+  var corrId = customCorrId || CORRECTION_SPREADSHEET_ID;
+  var targetSs;
+  if (corrId && corrId.toString().trim().length > 0) {
+    try {
+      targetSs = SpreadsheetApp.openById(corrId.toString().trim());
+    } catch(err) {
+      targetSs = SpreadsheetApp.getActiveSpreadsheet();
+    }
+  } else {
+    targetSs = SpreadsheetApp.getActiveSpreadsheet();
+  }
+
+  var sheet = targetSs.getSheetByName('A1') || targetSs.getSheetByName('a1');
+  if (!sheet) {
+    return { success: false, message: 'ورقة A1 غير موجودة في شيت التصحيح' };
+  }
+
+  var data = sheet.getDataRange().getValues();
+  if (!data || data.length < 2) {
+    return { success: true, corrections: [] };
+  }
+
+  var reqStudent = (username || '').toString().trim().toLowerCase();
+  var reqSheetNum = (sheetNumber || '').toString().trim().toLowerCase();
+
+  var results = [];
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var sNum = (row[0] || '').toString().trim().toLowerCase();
+    var sName = (row[1] || '').toString().trim().toLowerCase();
+
+    var matchSheet = !reqSheetNum || (sNum === reqSheetNum);
+    var matchName = !reqStudent || (sName === reqStudent || sName.indexOf(reqStudent) !== -1 || reqStudent.indexOf(sName) !== -1);
+
+    if (matchSheet && matchName) {
+      results.push({
+        sheetNumber: row[0] ? row[0].toString().trim() : '',
+        studentName: row[1] ? row[1].toString().trim() : '',
+        lessonTitle: row[2] ? row[2].toString().trim() : '',
+        imageSendCount: row[3] ? row[3].toString().trim() : '',
+        imageAssignment: row[4] ? row[4].toString().trim() : '',
+        audioSendCount: row[5] ? row[5].toString().trim() : '',
+        audioAssignment: row[6] ? row[6].toString().trim() : '',
+
+        imageCorrection: {
+          status: row[7] ? row[7].toString().trim() : '',
+          score: row[8] ? row[8].toString().trim() : '',
+          mainImage: row[9] ? row[9].toString().trim() : '',
+          additionalImages: row[10] ? row[10].toString().trim() : '',
+          videos: row[11] ? row[11].toString().trim() : '',
+          audioExplanations: row[12] ? row[12].toString().trim() : '',
+          date: row[13] ? row[13].toString().trim() : '',
+          sendCount: row[14] ? row[14].toString().trim() : '',
+          notes: row[15] ? row[15].toString().trim() : ''
+        },
+
+        audioCorrection: {
+          status: row[16] ? row[16].toString().trim() : '',
+          score: row[17] ? row[17].toString().trim() : '',
+          mainImage: row[18] ? row[18].toString().trim() : '',
+          audioExplanations: row[19] ? row[19].toString().trim() : '',
+          additionalImages: row[20] ? row[20].toString().trim() : '',
+          videos: row[21] ? row[21].toString().trim() : '',
+          date: row[22] ? row[22].toString().trim() : '',
+          sendCount: row[23] ? row[23].toString().trim() : '',
+          notes: row[24] ? row[24].toString().trim() : ''
+        }
+      });
+    }
+  }
+
+  return { success: true, corrections: results };
 }
 `;
 }

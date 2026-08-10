@@ -90,7 +90,8 @@ export interface AdminAnswerRow {
   letterListenScore?: string;
   recordingLink?: string;
   imageLink?: string;
-  finalResult?: string; // العمود AM
+  finalFormula?: string; // العمود AM
+  finalResult?: string; // العمود AN
   audioUploadCount?: number | string; // العمود AK
   imageUploadCount?: number | string; // العمود AL
   completed?: string; // العمود AO
@@ -110,11 +111,39 @@ export interface SocialLinks {
 }
 
 export interface HeaderConfig {
-  title?: string; // B2
-  subtitle?: string; // B3
-  logoUrl?: string; // C2
-  loginLogoUrl?: string; // D2
-  buttons?: HeaderNavButton[]; // B4:C4 to B8:C8
-  socials?: SocialLinks; // E2, F2, G2, H2
+  title?: string;
+  subtitle?: string;
+  logoUrl?: string; // D2
+  loginLogoUrl?: string; // login card logo
+  siteTitle?: string; // C2
+  welcomeMessage?: string; // B2
+  buttons?: HeaderNavButton[];
+  navButtons?: HeaderNavButton[];
+  socials?: SocialLinks;
+  socialLinks?: SocialLinks;
+}
+
+export interface CorrectionSectionData {
+  status: string;
+  score: string;
+  mainImage: string;
+  additionalImages: string[];
+  videos: string[];
+  audioExplanations: string[];
+  date: string;
+  sendCount: string;
+  notes: string;
+}
+
+export interface StudentCorrection {
+  sheetNumber: string;
+  studentName: string;
+  lessonTitle: string;
+  imageSendCount: string;
+  imageAssignment: string;
+  audioSendCount: string;
+  audioAssignment: string;
+  imageCorrection: CorrectionSectionData;
+  audioCorrection: CorrectionSectionData;
 }
 

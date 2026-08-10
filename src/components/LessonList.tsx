@@ -1,9 +1,10 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WordData } from '../types';
-import { LogOut, BookOpen, CheckCircle, RefreshCw, Star, PlayCircle, Lock, Eye, EyeOff } from 'lucide-react';
+import { LogOut, BookOpen, CheckCircle, RefreshCw, Star, PlayCircle, Lock, Eye, EyeOff, Award } from 'lucide-react';
 import { decrementRetryCount, unmarkLessonCompleted } from '../api';
 import { useLanguage } from '../translations';
+import StudentCorrectionModal from './StudentCorrectionModal';
 
 interface LessonListProps {
   username: string;
@@ -30,6 +31,7 @@ export default function LessonList({
   const [resetModalLesson, setResetModalLesson] = React.useState<{ index: number; lesson: WordData } | null>(null);
   const [resetting, setResetting] = React.useState(false);
   const [resetError, setResetError] = React.useState<string | null>(null);
+  const [showCorrectionModal, setShowCorrectionModal] = React.useState(false);
 
   const completedCount = React.useMemo(() => {
     return lessons.filter(l => l.completed === 'تم').length;
@@ -195,10 +197,18 @@ export default function LessonList({
           </div>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+          <button
+            onClick={() => setShowCorrectionModal(true)}
+            className="flex-1 sm:flex-initial px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-extrabold rounded-xl transition-all flex items-center justify-center gap-2 text-xs cursor-pointer shadow-md shadow-amber-500/10 active:scale-98"
+          >
+            <Award className="w-4 h-4" />
+            <span>{t('view_teacher_correction', 'عرض تصحيح الأستاذ')} 📝</span>
+          </button>
+
           <button
             onClick={onLogout}
-            className="w-full sm:w-auto px-5 py-2.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/50 text-rose-500 dark:text-rose-400 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-xs cursor-pointer shadow-sm"
+            className="px-4 py-2.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/50 text-rose-500 dark:text-rose-400 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-xs cursor-pointer shadow-sm"
           >
             <LogOut className="w-4 h-4" />
             <span>{t('logout_btn')}</span>
@@ -468,6 +478,17 @@ export default function LessonList({
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Student Corrections Modal */}
+      <AnimatePresence>
+        {showCorrectionModal && (
+          <StudentCorrectionModal
+            username={username}
+            sheetNumber={sheetNumber}
+            onClose={() => setShowCorrectionModal(false)}
+          />
         )}
       </AnimatePresence>
     </div>

@@ -1723,9 +1723,17 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                       </span>
                     </div>
 
-                    {/* 6. النتيجة الكلية (العمود AM) */}
+                    {/* 6. المعادلة الكاملة (العمود AM) */}
                     <div className="bg-slate-900/90 border border-slate-800/80 rounded-xl p-3">
-                      <span className="text-[10px] text-slate-400 font-bold block mb-1">النتيجة الكلية (العمود AM)</span>
+                      <span className="text-[10px] text-slate-400 font-bold block mb-1">المعادلة الكاملة (العمود AM)</span>
+                      <span className="font-extrabold text-amber-200 font-mono text-xs block dir-ltr text-right">
+                        {editingAnswer.finalFormula || 'غير مسجلة'}
+                      </span>
+                    </div>
+
+                    {/* 7. النتيجة النهائية (العمود AN) */}
+                    <div className="bg-slate-900/90 border border-slate-800/80 rounded-xl p-3">
+                      <span className="text-[10px] text-slate-400 font-bold block mb-1">النتيجة النهائية (العمود AN)</span>
                       <span className="font-extrabold text-amber-300 font-mono text-xs block">
                         {editingAnswer.finalResult || 'غير مسجلة'}
                       </span>

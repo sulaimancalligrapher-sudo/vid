@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { WordData, Question, Student } from '../types';
 import {
   ArrowRight, Image as ImageIcon, Video, Mic, Upload, Volume2,
-  Play, Pause, RefreshCw, CheckCircle2, ChevronRight, X, AlertTriangle, Sparkles, AlertCircle, Maximize, Minimize
+  Play, Pause, RefreshCw, CheckCircle2, ChevronRight, X, AlertTriangle, Sparkles, AlertCircle, Maximize, Minimize, Award
 } from 'lucide-react';
 import {
   saveQuestionAnswer,
@@ -18,6 +18,7 @@ import {
   markLessonCompleted
 } from '../api';
 import QuestionModal from './QuestionModal';
+import StudentCorrectionModal from './StudentCorrectionModal';
 import { useLanguage } from '../translations';
 
 // Helper to group Arabic base characters with their combining diacritics and elongation (Tatweel/Kashida ـ)
@@ -227,6 +228,7 @@ export default function LessonDetail({
   // Exit Validation State
   const [exitValidationMsg, setExitValidationMsg] = useState<string | null>(null);
   const [finalCompleting, setFinalCompleting] = useState(false);
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
 
   const hasLetterSounds = lesson.letterSounds.length > 0 && lesson.letterSounds.some(sound => sound && sound.startsWith('http'));
   const isReviewOnly = lesson.completed === 'تم' && !isReset;
@@ -1357,15 +1359,25 @@ export default function LessonDetail({
 
   return (
     <div className="w-full max-w-4xl mx-auto p-4 md:p-6 text-right font-sans" dir="rtl">
-      {/* Back Button */}
-      <button
-        onClick={handleExitLesson}
-        disabled={finalCompleting}
-        className="mb-6 px-5 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-sky-100 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 rounded-2xl cursor-pointer text-xs font-extrabold transition-all flex items-center gap-1.5 active:scale-95 shadow-sm disabled:opacity-50"
-      >
-        <ArrowRight className="w-4 h-4" />
-        <span>{t('save_and_back')}</span>
-      </button>
+      {/* Top Action Bar */}
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <button
+          onClick={handleExitLesson}
+          disabled={finalCompleting}
+          className="px-5 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-sky-100 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 rounded-2xl cursor-pointer text-xs font-extrabold transition-all flex items-center gap-1.5 active:scale-95 shadow-sm disabled:opacity-50"
+        >
+          <ArrowRight className="w-4 h-4" />
+          <span>{t('save_and_back')}</span>
+        </button>
+
+        <button
+          onClick={() => setShowCorrectionModal(true)}
+          className="px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-extrabold rounded-2xl cursor-pointer text-xs transition-all flex items-center gap-1.5 active:scale-95 shadow-md shadow-amber-500/10"
+        >
+          <Award className="w-4 h-4" />
+          <span>تصحيح هذا الدرس 📝</span>
+        </button>
+      </div>
 
       {/* Header Info */}
       <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-6 mb-6 shadow-lg shadow-sky-100/40 dark:shadow-none relative overflow-hidden">
@@ -2177,6 +2189,18 @@ export default function LessonDetail({
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Student Correction Modal */}
+      <AnimatePresence>
+        {showCorrectionModal && (
+          <StudentCorrectionModal
+            username={student.username}
+            sheetNumber={student.sheetNumber}
+            selectedLessonTitle={lesson.comment || lesson.word}
+            onClose={() => setShowCorrectionModal(false)}
+          />
         )}
       </AnimatePresence>
     </div>

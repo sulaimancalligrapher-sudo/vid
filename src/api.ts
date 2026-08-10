@@ -1,4 +1,4 @@
-import { WordData, AdminQuestionRow, AdminAnswerRow, Question, AdminQuestionItem, HeaderNavButton, HeaderConfig } from './types';
+import { WordData, AdminQuestionRow, AdminAnswerRow, Question, AdminQuestionItem, HeaderNavButton, HeaderConfig, StudentCorrection } from './types';
 
 // Helper to get Web App URL from localStorage or environment variables
 export function getWebAppUrl(): string {
@@ -15,7 +15,7 @@ export function getWebAppUrl(): string {
   }
 
   // 3. Default fallback hardcoded URL
-  const fallbackUrl: string = 'https://script.google.com/macros/s/AKfycbwRNvNsUkcY9_Ti3bXKfX00d_TJvu6o_epAEO33NVh558k4b46IHVAf7sdjcAEYbG04NQ/exec';
+  const fallbackUrl: string = 'https://script.google.com/macros/s/AKfycbwj70xPL289LQYrD5-EV1FWJSaYR5gaPn_Cfqi1W-uAUlf8C6i2CnZDsM6JKk6xhhvOZg/exec';
   if (fallbackUrl && fallbackUrl.trim().length > 0) {
     return fallbackUrl.trim();
   }
@@ -701,6 +701,7 @@ export async function fetchAdminAnswers(): Promise<AdminAnswerRow[]> {
         comment: 'L1',
         videoAnswersResult: '15/15',
         audioAnswersResult: '2/2',
+        finalFormula: '15/15 + 2/2',
         finalResult: '100%',
         audioUploadCount: 1,
         imageUploadCount: 1,
@@ -932,5 +933,77 @@ export async function fetchHeaderConfig(): Promise<HeaderConfig> {
   }
 
   return fallbackConfig;
+}
+
+export function parseMultiUrls(rawStr?: any): string[] {
+  if (!rawStr) return [];
+  if (Array.isArray(rawStr)) {
+    return rawStr.flatMap(s => parseMultiUrls(s)).filter(Boolean);
+  }
+  const str = String(rawStr).trim();
+  if (!str) return [];
+
+  // Split by |||, ||, |, newlines, commas, or semicolons
+  const lines = str.split(/(?:\|\|\||\|\||\||\r?\n|,|;)+/);
+  const result: string[] = [];
+  for (const item of lines) {
+    const cleaned = item.trim();
+    if (cleaned) {
+      result.push(formatDriveImageUrl(cleaned));
+    }
+  }
+  return result;
+}
+
+export async function fetchStudentCorrections(username: string, sheetNumber: string): Promise<StudentCorrection[]> {
+  const correctionSheetId = localStorage.getItem('correctionSheetId') || '1F3hDUfjgBEkUAIOaF66634EWQQ8XZSdyKjlTzrVA25k';
+  
+  try {
+    const res = await fetchGas({
+      action: 'getCorrections',
+      username: username.trim(),
+      sheetNumber: sheetNumber.trim(),
+      corrSheetId: correctionSheetId,
+      correctionSheetId: correctionSheetId
+    });
+
+    if (res && res.success && Array.isArray(res.corrections)) {
+      return res.corrections.map((item: any) => ({
+        sheetNumber: String(item.sheetNumber || sheetNumber).trim(),
+        studentName: String(item.studentName || username).trim(),
+        lessonTitle: String(item.lessonTitle || '').trim(),
+        imageSendCount: String(item.imageSendCount || '').trim(),
+        imageAssignment: String(item.imageAssignment || '').trim(),
+        audioSendCount: String(item.audioSendCount || '').trim(),
+        audioAssignment: String(item.audioAssignment || '').trim(),
+        imageCorrection: {
+          status: String(item.imageCorrection?.status || '').trim(),
+          score: String(item.imageCorrection?.score || '').trim(),
+          mainImage: formatDriveImageUrl(item.imageCorrection?.mainImage),
+          additionalImages: parseMultiUrls(item.imageCorrection?.additionalImages),
+          videos: parseMultiUrls(item.imageCorrection?.videos),
+          audioExplanations: parseMultiUrls(item.imageCorrection?.audioExplanations),
+          date: String(item.imageCorrection?.date || '').trim(),
+          sendCount: String(item.imageCorrection?.sendCount || '').trim(),
+          notes: String(item.imageCorrection?.notes || '').trim()
+        },
+        audioCorrection: {
+          status: String(item.audioCorrection?.status || '').trim(),
+          score: String(item.audioCorrection?.score || '').trim(),
+          mainImage: formatDriveImageUrl(item.audioCorrection?.mainImage),
+          audioExplanations: parseMultiUrls(item.audioCorrection?.audioExplanations),
+          additionalImages: parseMultiUrls(item.audioCorrection?.additionalImages),
+          videos: parseMultiUrls(item.audioCorrection?.videos),
+          date: String(item.audioCorrection?.date || '').trim(),
+          sendCount: String(item.audioCorrection?.sendCount || '').trim(),
+          notes: String(item.audioCorrection?.notes || '').trim()
+        }
+      }));
+    }
+  } catch (err) {
+    console.warn('Error fetching corrections from Apps Script:', err);
+  }
+
+  return [];
 }
 
