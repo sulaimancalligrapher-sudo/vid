@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { WordData, Question, Student } from '../types';
 import {
   ArrowRight, Image as ImageIcon, Video, Mic, Upload, Volume2,
-  Play, Pause, RefreshCw, CheckCircle2, ChevronRight, X, AlertTriangle, Sparkles, AlertCircle, Maximize, Minimize, Award
+  Play, Pause, RefreshCw, CheckCircle2, ChevronRight, X, AlertTriangle, Sparkles, AlertCircle, Maximize, Minimize, Award,
+  Camera, FlipHorizontal, Zap, Sun
 } from 'lucide-react';
 import {
   saveQuestionAnswer,
@@ -201,6 +202,10 @@ export default function LessonDetail({
   // Integrated Camera State
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState<'environment' | 'user'>('environment');
+  const [cameraBrightness, setCameraBrightness] = useState<'boost' | 'high' | 'normal'>('high');
+  const [torchActive, setTorchActive] = useState(false);
+  const [hasTorch, setHasTorch] = useState(false);
   const [capturedImageBase64, setCapturedImageBase64] = useState<string | null>(null);
   const [capturedImagePreview, setCapturedImagePreview] = useState<string | null>(null);
   const [savedImageLink, setSavedImageLink] = useState('');
@@ -1055,29 +1060,64 @@ export default function LessonDetail({
   };
 
   // ------------------- IN-PAGE CAMERA GRABBER -------------------
-  const startCamera = async () => {
+  const startCamera = async (targetFacing?: 'environment' | 'user') => {
     setCapturedImagePreview(null);
     setCapturedImageBase64(null);
     setImageUploadError('');
 
+    const facing = targetFacing || cameraFacingMode;
+
     try {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+      }
+
       let stream: MediaStream;
       try {
+        // Request high-definition rectangular stream (1080p/1440p) with 16:9 aspect ratio
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } },
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: 2560, min: 1280 },
+            height: { ideal: 1440, min: 720 },
+            aspectRatio: { ideal: 16 / 9 },
+            frameRate: { ideal: 30, min: 15 }
+          },
           audio: false,
         });
-      } catch (inner) {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
+      } catch (inner1) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: facing },
+              width: { ideal: 1920, min: 640 },
+              height: { ideal: 1080, min: 480 }
+            },
+            audio: false,
+          });
+        } catch (inner2) {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        }
       }
+
+      // Check if the video track supports torch/flash
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        const capabilities: any = typeof (track as any).getCapabilities === 'function' ? (track as any).getCapabilities() : {};
+        setHasTorch(Boolean(capabilities.torch));
+      } else {
+        setHasTorch(false);
+      }
+
+      setTorchActive(false);
       setCameraStream(stream);
       setCameraActive(true);
     } catch (err: any) {
       console.error('Camera access failed:', err);
-      setImageUploadError('خطأ: لم نتمكن من تفعيل الكاميرا. يرجى تفعيل أذونات الكاميرا في جهازك.');
+      setImageUploadError('خطأ: لم نتمكن من تفعيل الكاميرا. يرجى تفعيل أذونات الكاميرا في جهازك أو المتصفح.');
     }
   };
 
@@ -1086,6 +1126,28 @@ export default function LessonDetail({
       cameraStream.getTracks().forEach(t => t.stop());
     }
     setCameraActive(false);
+    setTorchActive(false);
+  };
+
+  const toggleCameraFacing = async () => {
+    const nextFacing = cameraFacingMode === 'environment' ? 'user' : 'environment';
+    setCameraFacingMode(nextFacing);
+    await startCamera(nextFacing);
+  };
+
+  const toggleTorch = async () => {
+    if (!cameraStream) return;
+    const track = cameraStream.getVideoTracks()[0];
+    if (!track) return;
+    try {
+      const nextState = !torchActive;
+      await (track as any).applyConstraints({
+        advanced: [{ torch: nextState }]
+      });
+      setTorchActive(nextState);
+    } catch (e) {
+      console.error('Torch toggle failed:', e);
+    }
   };
 
   const capturePhoto = () => {
@@ -1093,27 +1155,34 @@ export default function LessonDetail({
     const video = videoStreamRef.current;
     
     const canvas = document.createElement('canvas');
-    const videoWidth = video.videoWidth || 640;
-    const videoHeight = video.videoHeight || 480;
-    const size = Math.min(videoWidth, videoHeight);
+    const videoWidth = video.videoWidth || 1920;
+    const videoHeight = video.videoHeight || 1080;
     
-    const sx = (videoWidth - size) / 2;
-    const sy = (videoHeight - size) / 2;
-    
-    canvas.width = size;
-    canvas.height = size;
+    // Natural high-resolution rectangular dimension
+    canvas.width = videoWidth;
+    canvas.height = videoHeight;
     const context = canvas.getContext('2d');
     if (!context) return;
     
-    // Draw directly without mirror flip so paper/documents are not reversed
-    context.drawImage(video, sx, sy, size, size, 0, 0, size, size);
+    // Apply brightness, contrast, and clarity enhancement filter
+    if (cameraBrightness === 'boost') {
+      context.filter = 'brightness(1.25) contrast(1.18) saturate(1.05)';
+    } else if (cameraBrightness === 'high') {
+      context.filter = 'brightness(1.15) contrast(1.12) saturate(1.03)';
+    } else {
+      context.filter = 'brightness(1.05) contrast(1.05)';
+    }
+
+    // Draw directly without mirror flip so paper/documents are not reversed and clearly readable
+    context.drawImage(video, 0, 0, videoWidth, videoHeight);
 
     // DRAW WATERMARK
     try {
-      const bannerHeight = Math.max(30, Math.floor(canvas.height * 0.07));
-      const fontSize = Math.max(10, Math.floor(bannerHeight * 0.32));
+      const bannerHeight = Math.max(34, Math.floor(canvas.height * 0.065));
+      const fontSize = Math.max(12, Math.floor(bannerHeight * 0.38));
 
-      context.fillStyle = 'rgba(15, 23, 42, 0.75)';
+      context.filter = 'none'; // reset filter for watermark text
+      context.fillStyle = 'rgba(15, 23, 42, 0.82)';
       context.fillRect(0, canvas.height - bannerHeight, canvas.width, bannerHeight);
 
       context.fillStyle = '#FFFFFF';
@@ -1139,12 +1208,13 @@ export default function LessonDetail({
       ].filter(Boolean);
 
       const overlayText = overlayParts.join(' - ');
-      context.fillText(overlayText, canvas.width - 15, canvas.height - (bannerHeight / 2));
+      context.fillText(overlayText, canvas.width - 20, canvas.height - (bannerHeight / 2));
     } catch (err) {
       console.error('Failed to embed camera watermark:', err);
     }
 
-    const base64 = canvas.toDataURL('image/jpeg', 0.85);
+    // High quality JPEG (0.95 quality)
+    const base64 = canvas.toDataURL('image/jpeg', 0.95);
     setCapturedImagePreview(base64);
     setCapturedImageBase64(base64.split(',')[1]);
     stopCamera();
@@ -2011,28 +2081,126 @@ export default function LessonDetail({
                         <span className="text-xs text-indigo-500 font-extrabold">{t('photo_uploading')}</span>
                       </div>
                     ) : (
-                      <div className="h-12 flex items-center justify-center text-slate-500 dark:text-slate-400 text-xs mb-3 font-bold">
+                      <div className="h-10 flex items-center justify-center text-slate-500 dark:text-slate-400 text-xs mb-2 font-bold">
                         {cameraActive ? t('camera_live') : capturedImagePreview ? t('photo_captured') : t('camera_ready')}
                       </div>
                     )}
 
                     {/* Video Stream Preview */}
                     {cameraActive && !uploadingImage && (
-                      <div className="relative aspect-square w-full max-w-[480px] rounded-2xl overflow-hidden border-2 border-indigo-500 bg-slate-900 mb-4 shadow-xl">
-                        <video
-                          ref={videoStreamRef}
-                          autoPlay
-                          playsInline
-                          muted
-                          className="w-full h-full object-cover"
-                        />
+                      <div className="w-full max-w-2xl mx-auto flex flex-col items-center mb-4">
+                        {/* Camera Quick Control Toolbar (Lighting, Flip, Torch) */}
+                        <div className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-slate-900 text-white rounded-t-2xl border-x-2 border-t-2 border-indigo-500 text-xs flex-wrap">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                            <Camera className="w-4 h-4 text-amber-400" />
+                            <span>كاميرا مستطيلة واضحة (HD)</span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* Lighting Selector */}
+                            <div className="flex items-center bg-slate-800 rounded-lg p-0.5 border border-slate-700">
+                              <button
+                                type="button"
+                                onClick={() => setCameraBrightness('boost')}
+                                className={`px-2 py-1 rounded text-[11px] font-bold transition-colors ${
+                                  cameraBrightness === 'boost'
+                                    ? 'bg-amber-400 text-slate-950 shadow'
+                                    : 'text-slate-300 hover:text-white'
+                                }`}
+                                title="إضاءة قوية جداً مناسبة للأوراق والخطوط الضعيفة"
+                              >
+                                💡 ساطعة جداً
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCameraBrightness('high')}
+                                className={`px-2 py-1 rounded text-[11px] font-bold transition-colors ${
+                                  cameraBrightness === 'high'
+                                    ? 'bg-indigo-500 text-white shadow'
+                                    : 'text-slate-300 hover:text-white'
+                                }`}
+                                title="إضاءة محسنة تلقائياً مناسبة للدفاتر والواجبات"
+                              >
+                                ✨ منورة للدفتر
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCameraBrightness('normal')}
+                                className={`px-2 py-1 rounded text-[11px] font-bold transition-colors ${
+                                  cameraBrightness === 'normal'
+                                    ? 'bg-slate-600 text-white shadow'
+                                    : 'text-slate-300 hover:text-white'
+                                }`}
+                                title="إضاءة طبيعية"
+                              >
+                                ☀️ عادية
+                              </button>
+                            </div>
+
+                            {/* Flip Camera Button */}
+                            <button
+                              type="button"
+                              onClick={toggleCameraFacing}
+                              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 rounded-lg font-bold text-[11px] flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                              title="تبديل الكاميرا (أمامية / خلفية)"
+                            >
+                              <FlipHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+                              <span>{cameraFacingMode === 'environment' ? 'خلفية' : 'أمامية'}</span>
+                            </button>
+
+                            {/* Flash / Torch Button */}
+                            {hasTorch && (
+                              <button
+                                type="button"
+                                onClick={toggleTorch}
+                                className={`px-2.5 py-1 border rounded-lg font-bold text-[11px] flex items-center gap-1 transition-all active:scale-95 cursor-pointer ${
+                                  torchActive
+                                    ? 'bg-amber-400 text-slate-950 border-amber-300 shadow'
+                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                                }`}
+                                title="تشغيل كشاف الفلاش"
+                              >
+                                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                                <span>{torchActive ? 'الكشاف شغال' : 'كشاف'}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Rectangular Live Video Container */}
+                        <div className="relative aspect-[4/3] sm:aspect-[16/9] w-full rounded-b-2xl overflow-hidden border-x-2 border-b-2 border-indigo-500 bg-black shadow-2xl flex items-center justify-center">
+                          <video
+                            ref={videoStreamRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            style={{
+                              filter:
+                                cameraBrightness === 'boost'
+                                  ? 'brightness(1.25) contrast(1.18) saturate(1.05)'
+                                  : cameraBrightness === 'high'
+                                  ? 'brightness(1.15) contrast(1.12) saturate(1.03)'
+                                  : 'brightness(1.05) contrast(1.05)',
+                            }}
+                            className="w-full h-full object-contain bg-black"
+                          />
+                        </div>
                       </div>
                     )}
 
                     {/* Captured Photo Preview */}
                     {capturedImagePreview && !cameraActive && !uploadingImage && (
-                      <div className="relative aspect-square w-full max-w-[480px] rounded-2xl overflow-hidden border-2 border-emerald-500 bg-slate-900 mb-4 shadow-xl">
-                        <img src={capturedImagePreview} className="w-full h-full object-cover" alt="Captured" />
+                      <div className="w-full max-w-2xl mx-auto flex flex-col items-center mb-4">
+                        <div className="w-full flex items-center justify-between px-3 py-1.5 bg-emerald-950 text-emerald-300 rounded-t-2xl border-x-2 border-t-2 border-emerald-500 text-xs font-bold">
+                          <span className="flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                            معاينة الصورة الملتقطة (جاهزة للإرسال)
+                          </span>
+                          <span className="text-[11px] bg-emerald-800/60 text-white px-2 py-0.5 rounded">عالية الوضوح مستطيلة</span>
+                        </div>
+                        <div className="relative aspect-[4/3] sm:aspect-[16/9] w-full rounded-b-2xl overflow-hidden border-x-2 border-b-2 border-emerald-500 bg-black shadow-2xl flex items-center justify-center">
+                          <img src={capturedImagePreview} className="w-full h-full object-contain bg-black" alt="Captured" />
+                        </div>
                       </div>
                     )}
 

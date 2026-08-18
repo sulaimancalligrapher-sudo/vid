@@ -1,4 +1,8 @@
-import { WordData, AdminQuestionRow, AdminAnswerRow, Question, AdminQuestionItem, HeaderNavButton, HeaderConfig, StudentCorrection } from './types';
+import { 
+  WordData, AdminQuestionRow, AdminAnswerRow, Question, AdminQuestionItem, 
+  HeaderNavButton, HeaderConfig, StudentCorrection,
+  TelegramConfig, TelegramTemplateItem, TelegramUserBinding, TelegramBroadcastMessage
+} from './types';
 
 // Helper to get Web App URL from localStorage or environment variables
 export function getWebAppUrl(): string {
@@ -1006,4 +1010,556 @@ export async function fetchStudentCorrections(username: string, sheetNumber: str
 
   return [];
 }
+
+// ==========================================
+// TELEGRAM INTEGRATION & NOTIFICATION SYSTEM
+// ==========================================
+
+export const DEFAULT_TELEGRAM_TEMPLATES: TelegramTemplateItem[] = [
+  {
+    key: 'homework_received',
+    title: 'تأكيد استلام الواجب (للطالب)',
+    description: 'يُرسل للطالب فور رفع الواجب في المنصة',
+    ar: 'مرحباً {student} 👋\nتم استلام واجبك في درس: 📚 {lesson}\n(المحاولة: {send_count})\nملفاتك وصلت للأستاذ وجارٍ جدولتها للتصحيح ⏳\nبالتوفيق والنجاح! 🌟',
+    th: 'สวัสดี {student} 👋\nได้รับส่งการบ้านบทเรียน: 📚 {lesson} เรียบร้อยแล้ว!\n(ครั้งที่: {send_count})\nไฟล์ของคุณส่งถึงอาจารย์แล้วและกำลังรอการตรวจ ⏳\nขอให้โชคดีและประสบความสำเร็จ! 🌟',
+    en: 'Hello {student} 👋\nYour homework for: 📚 {lesson} has been received!\n(Submission: {send_count})\nYour submission reached the teacher and is queued for review ⏳\nBest of luck! 🌟',
+    variables: ['{student}', '{lesson}', '{sheet}', '{send_count}']
+  },
+  {
+    key: 'correction_ready',
+    title: 'إشعار جاهزية التصحيح (للطالب)',
+    description: 'يُرسل للطالب عند رصد الدرجة والملاحظات في شيت التصحيح',
+    ar: '🎉 مرحباً {student}!\nتم تصحيح واجبك في درس: 📚 {lesson}\n\n🏆 النتيجة / الدرجة: {score}\n📝 ملاحظات الأستاذ: {notes}\n\nاضغط على الزر أدناه لمعاينة التصحيح والشرح الصوتي المفصل 👇',
+    th: '🎉 สวัสดี {student}!\nการตรวจการบ้านบทเรียน: 📚 {lesson} เสร็จสมบูรณ์แล้ว!\n\n🏆 คะแนน/ผลลัพธ์: {score}\n📝 บันทึกจากอาจารย์: {notes}\n\nกดปุ่มด้านล่างเพื่อดูผลการตรวจและคำอธิบายเสียงอย่างละเอียด 👇',
+    en: '🎉 Hello {student}!\nYour homework for: 📚 {lesson} has been reviewed!\n\n🏆 Result / Score: {score}\n📝 Teacher Notes: {notes}\n\nClick the button below to view detailed correction and audio feedback 👇',
+    variables: ['{student}', '{lesson}', '{sheet}', '{score}', '{notes}']
+  },
+  {
+    key: 'new_homework_teacher',
+    title: 'إشعار واجب جديد (للأستاذ والقروب)',
+    description: 'يُرسل في خاص الأستاذ أو قروب الأساتذة عند تسليم طالب لواجبه',
+    ar: '🔔 واجب جديد تم تسليمه!\n\n👤 الطالب: {student} (شيت #{sheet})\n📖 الدرس: {lesson}\n📦 نوع التسليم: {type}\n🔢 عدد المحاولات: {send_count}\n⏰ الوقت: {time}',
+    th: '🔔 มีการส่งการบ้านใหม่!\n\n👤 นักเรียน: {student} (ชีท #{sheet})\n📖 บทเรียน: {lesson}\n📦 ประเภท: {type}\n🔢 จำนวนส่ง: {send_count}\n⏰ เวลา: {time}',
+    en: '🔔 New homework submitted!\n\n👤 Student: {student} (Sheet #{sheet})\n📖 Lesson: {lesson}\n📦 Type: {type}\n🔢 Submissions count: {send_count}\n⏰ Time: {time}',
+    variables: ['{student}', '{sheet}', '{lesson}', '{type}', '{send_count}', '{time}']
+  },
+  {
+    key: 'general_announcement',
+    title: 'تنبيه أو إعلان عام (جماعي)',
+    description: 'يُستخدم عند إرسال تعميم أو تذكير لجميع الطلاب أو طالب محدد',
+    ar: '📢 تنبيه هام من إدارة الدورة:\n\n{message}\n\nنتمنى لكم دوام التوفيق والتميز ✨',
+    th: '📢 ประกาศสำคัญจากฝ่ายบริหารหลักสูตร:\n\n{message}\n\nขอให้ทุกท่านมีความสุขและประสบความสำเร็จในการเรียนรู้ ✨',
+    en: '📢 Important Announcement:\n\n{message}\n\nWishing you continued success and excellence ✨',
+    variables: ['{student}', '{message}']
+  }
+];
+
+const TELEGRAM_CONFIG_STORAGE_KEY = 'telegram_system_config';
+const TELEGRAM_TEMPLATES_STORAGE_KEY = 'telegram_templates_config';
+const TELEGRAM_STUDENTS_STORAGE_KEY = 'telegram_linked_students';
+
+export function getTelegramConfig(): TelegramConfig {
+  const saved = localStorage.getItem(TELEGRAM_CONFIG_STORAGE_KEY);
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch {}
+  }
+  return {
+    botToken: '',
+    botUsername: '',
+    teacherChatId: '',
+    groupChatId: '',
+    enableTeacherPrivate: true,
+    enableStudentPrivate: true,
+    enableGroupNotify: false,
+    sendMediaFiles: true
+  };
+}
+
+export function saveTelegramConfig(config: TelegramConfig): void {
+  localStorage.setItem(TELEGRAM_CONFIG_STORAGE_KEY, JSON.stringify(config));
+}
+
+// Save Telegram Config directly to Google Sheet (Telegram_Config) and localStorage
+export async function saveTelegramConfigToSheet(config: TelegramConfig): Promise<{ success: boolean; message?: string }> {
+  localStorage.setItem(TELEGRAM_CONFIG_STORAGE_KEY, JSON.stringify(config));
+  try {
+    const payload = {
+      action: 'saveTelegramConfig',
+      botToken: config.botToken || '',
+      botUsername: config.botUsername || '',
+      teacherChatId: config.teacherChatId || '',
+      groupChatId: config.groupChatId || '',
+      notifyTeacherOnSubmit: config.enableTeacherPrivate !== false,
+      notifyGroupOnSubmit: config.enableGroupNotify === true,
+      notifyStudentOnScore: config.enableStudentPrivate !== false,
+      notifyStudentOnRedo: config.enableStudentPrivate !== false,
+    };
+    const res = await fetchGas({ action: 'saveTelegramConfig' }, 'POST', payload);
+    return res && typeof res === 'object' ? res : { success: true };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'تعذر الاتصال بـ Google Apps Script' };
+  }
+}
+
+// Fetch Telegram Config directly from Google Sheet (Telegram_Config)
+export async function fetchTelegramConfigFromSheet(): Promise<{ success: boolean; config?: TelegramConfig; error?: string }> {
+  try {
+    const res = await fetchGas({ action: 'getTelegramConfig' }, 'GET');
+    if (res && typeof res === 'object') {
+      const cfg: TelegramConfig = {
+        botToken: res.botToken || '',
+        botUsername: res.botUsername || '',
+        teacherChatId: res.teacherChatId || '',
+        groupChatId: res.groupChatId || '',
+        enableTeacherPrivate: res.notifyTeacherOnSubmit !== false,
+        enableStudentPrivate: res.notifyStudentOnScore !== false,
+        enableGroupNotify: res.notifyGroupOnSubmit === true,
+        sendMediaFiles: true
+      };
+      if (cfg.botToken || cfg.teacherChatId || cfg.groupChatId) {
+        localStorage.setItem(TELEGRAM_CONFIG_STORAGE_KEY, JSON.stringify(cfg));
+      }
+      return { success: true, config: cfg };
+    }
+    return { success: false };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export function getTelegramTemplates(): TelegramTemplateItem[] {
+  const saved = localStorage.getItem(TELEGRAM_TEMPLATES_STORAGE_KEY);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch {}
+  }
+  return DEFAULT_TELEGRAM_TEMPLATES;
+}
+
+export function saveTelegramTemplates(templates: TelegramTemplateItem[]): void {
+  localStorage.setItem(TELEGRAM_TEMPLATES_STORAGE_KEY, JSON.stringify(templates));
+}
+
+export function getLinkedTelegramStudents(): Record<string, TelegramUserBinding> {
+  const saved = localStorage.getItem(TELEGRAM_STUDENTS_STORAGE_KEY);
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch {}
+  }
+  return {};
+}
+
+export function saveLinkedTelegramStudent(binding: TelegramUserBinding): void {
+  const all = getLinkedTelegramStudents();
+  const key = `${binding.studentName.trim().toLowerCase()}__${binding.sheetNumber.trim()}`;
+  all[key] = { ...binding, updatedAt: new Date().toISOString() };
+  localStorage.setItem(TELEGRAM_STUDENTS_STORAGE_KEY, JSON.stringify(all));
+}
+
+export function removeLinkedTelegramStudent(studentName: string, sheetNumber: string): void {
+  const all = getLinkedTelegramStudents();
+  const key = `${studentName.trim().toLowerCase()}__${sheetNumber.trim()}`;
+  delete all[key];
+  localStorage.setItem(TELEGRAM_STUDENTS_STORAGE_KEY, JSON.stringify(all));
+}
+
+// Fetch all students registered in Settings sheet (Columns B & C)
+export async function fetchSettingsStudentsFromSheet(): Promise<{ success: boolean; students?: Array<{ name: string; sheet: string }>; error?: string }> {
+  try {
+    const data = await fetchGas({ action: 'getAllSettingsStudents' }, 'GET');
+    if (Array.isArray(data)) {
+      return { success: true, students: data };
+    }
+    return { success: true, students: [] };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'تعذر جلب الطلاب من ورقة Settings.' };
+  }
+}
+
+// Fetch linked Telegram users directly from Google Sheet
+export async function fetchLinkedTelegramUsersFromSheet(): Promise<{ success: boolean; users?: Record<string, TelegramUserBinding>; error?: string }> {
+  try {
+    const data = await fetchGas({ action: 'getTelegramUsers' }, 'GET');
+    if (data && typeof data === 'object') {
+      // Also cache to localStorage
+      localStorage.setItem(TELEGRAM_STUDENTS_STORAGE_KEY, JSON.stringify(data));
+      return { success: true, users: data };
+    }
+    return { success: true, users: {} };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'تعذر جلب الطلاب من جدول البيانات.' };
+  }
+}
+
+// Generate direct Telegram deep-link for a student
+export function generateStudentTelegramLink(botUsername: string, studentName: string, sheetNumber: string, lang: string = 'ar'): string {
+  const cleanBot = botUsername.replace(/^@/, '').trim();
+  if (!cleanBot) return '';
+  // Telegram deep linking strictly requires pure ASCII alphanumeric characters [a-zA-Z0-9_-], max 64 bytes
+  const cleanSheet = sheetNumber.trim().replace(/[^a-zA-Z0-9]/g, '');
+  const payload = `S${cleanSheet || '1'}_${lang}`;
+  return `https://t.me/${cleanBot}?start=${payload}`;
+}
+
+// Test Bot Token by pinging Telegram getMe API
+export async function testTelegramBotToken(botToken: string): Promise<{ success: boolean; data?: any; error?: string }> {
+  const token = botToken.trim();
+  if (!token) return { success: false, error: 'يرجى إدخال Bot Token صالح.' };
+  
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    const data = await res.json();
+    if (data.ok && data.result) {
+      return {
+        success: true,
+        data: {
+          id: data.result.id,
+          name: data.result.first_name,
+          username: data.result.username,
+          canJoinGroups: data.result.can_join_groups,
+          canReadAllGroupMessages: data.result.can_read_all_group_messages
+        }
+      };
+    } else {
+      return { success: false, error: data.description || 'فشل التحقق من صحة التوكن عبر Telegram API' };
+    }
+  } catch (err: any) {
+    return { success: false, error: 'تعذر الاتصال بـ Telegram API: ' + (err.message || '') };
+  }
+}
+
+// Fetch recent chats / updates to discover Chat ID
+export async function getTelegramRecentUpdates(botToken: string): Promise<{ success: boolean; chats?: Array<{ id: number | string; title: string; type: string; date: string }>; error?: string }> {
+  const token = botToken.trim();
+  if (!token) return { success: false, error: 'يرجى إدخال Bot Token أولاً.' };
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=-10`);
+    const data = await res.json();
+    if (data.ok && Array.isArray(data.result)) {
+      const chatsMap = new Map<string, { id: number | string; title: string; type: string; date: string }>();
+      
+      for (const update of data.result) {
+        const msg = update.message || update.channel_post || update.my_chat_member;
+        if (msg && msg.chat) {
+          const chat = msg.chat;
+          const key = String(chat.id);
+          const title = chat.title || [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username || 'محادثة خاصة';
+          const type = chat.type === 'private' ? 'خاص (أستاذ/طالب)' : chat.type.includes('group') ? 'قروب' : chat.type;
+          const dateStr = msg.date ? new Date(msg.date * 1000).toLocaleTimeString('ar-EG') : '';
+          
+          chatsMap.set(key, {
+            id: chat.id,
+            title,
+            type,
+            date: dateStr
+          });
+        }
+      }
+      
+      return { success: true, chats: Array.from(chatsMap.values()) };
+    } else {
+      return { success: false, error: data.description || 'لم يتم العثور على تحديثات' };
+    }
+  } catch (err: any) {
+    return { success: false, error: 'خطأ أثناء جلب التحديثات: ' + (err.message || '') };
+  }
+}
+
+// Direct send message or photo via Telegram API
+export async function sendTelegramMessageDirect(params: {
+  botToken: string;
+  chatId: string | number;
+  text: string;
+  photoUrl?: string;
+  buttons?: Array<{ text: string; url: string }>;
+  buttonLabel?: string;
+  buttonUrl?: string;
+  parseMode?: 'HTML' | 'Markdown';
+}): Promise<{ success: boolean; error?: string }> {
+  const { botToken, chatId, text, photoUrl, buttons, buttonLabel, buttonUrl, parseMode } = params;
+  if (!botToken || !chatId || (!text && !photoUrl)) {
+    return { success: false, error: 'البيانات غير مكتملة (Bot Token، Chat ID، أو المحتوى مفقود).' };
+  }
+
+  let replyMarkup: any = undefined;
+  if (buttons && buttons.length > 0) {
+    const validBtns = buttons.filter(b => b.text && b.url && b.url.startsWith('http'));
+    if (validBtns.length > 0) {
+      replyMarkup = {
+        inline_keyboard: [validBtns]
+      };
+    }
+  } else if (buttonLabel && buttonUrl && buttonUrl.startsWith('http')) {
+    replyMarkup = {
+      inline_keyboard: [
+        [
+          {
+            text: buttonLabel,
+            url: buttonUrl
+          }
+        ]
+      ]
+    };
+  }
+
+  // إذا تم تزويد رابط صورة، نجرب إرسال كـ sendPhoto أولاً
+  if (photoUrl && photoUrl.startsWith('http')) {
+    try {
+      const photoPayload: any = {
+        chat_id: chatId,
+        photo: photoUrl,
+        caption: text.substring(0, 1024)
+      };
+      if (parseMode) photoPayload.parse_mode = parseMode;
+      if (replyMarkup) photoPayload.reply_markup = replyMarkup;
+
+      const pRes = await fetch(`https://api.telegram.org/bot${botToken.trim()}/sendPhoto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(photoPayload)
+      });
+      const pData = await pRes.json();
+      if (pData.ok) {
+        return { success: true };
+      }
+    } catch (errPhoto) {
+      // fallback to sendMessage
+    }
+  }
+
+  const payload: any = {
+    chat_id: chatId,
+    text: text
+  };
+
+  if (parseMode) {
+    payload.parse_mode = parseMode;
+  }
+
+  if (replyMarkup) {
+    payload.reply_markup = replyMarkup;
+  }
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken.trim()}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.ok) {
+      return { success: true };
+    } else {
+      return { success: false, error: data.description || 'رفض Telegram إرسال الرسالة.' };
+    }
+  } catch (err: any) {
+    return { success: false, error: err.message || 'خطأ في الاتصال بتلغرام.' };
+  }
+}
+
+// Set Webhook for Bot to point to Google Apps Script Web App URL
+export async function setTelegramWebhook(botToken: string, webAppUrl: string): Promise<{ success: boolean; description?: string; error?: string }> {
+  const token = botToken.trim();
+  const url = webAppUrl.trim();
+  if (!token || !url) return { success: false, error: 'يرجى تزويد Bot Token ورابط Web App URL صالحين.' };
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(url)}&drop_pending_updates=true`);
+    const data = await res.json();
+    if (data.ok) {
+      return { success: true, description: data.description || 'تم تفعيل الربط التلقائي Webhook بنجاح!' };
+    } else {
+      return { success: false, error: data.description || 'فشل تفعيل Webhook من جانب Telegram.' };
+    }
+  } catch (err: any) {
+    return { success: false, error: 'خطأ في الاتصال: ' + (err.message || '') };
+  }
+}
+
+// Delete Webhook / Drop pending updates
+export async function deleteTelegramWebhook(botToken: string): Promise<{ success: boolean; description?: string; error?: string }> {
+  const token = botToken.trim();
+  if (!token) return { success: false, error: 'يرجى إدخال Bot Token.' };
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=true`);
+    const data = await res.json();
+    if (data.ok) {
+      return { success: true, description: data.description || 'تم إيقاف Webhook ومسح الرسائل العالقة بنجاح' };
+    } else {
+      return { success: false, error: data.description || 'تعذر حذف Webhook' };
+    }
+  } catch (err: any) {
+    return { success: false, error: err.message || 'خطأ في الاتصال' };
+  }
+}
+
+// Get Webhook Info
+export async function getTelegramWebhookInfo(botToken: string): Promise<{ success: boolean; data?: any; error?: string }> {
+  const token = botToken.trim();
+  if (!token) return { success: false, error: 'يرجى إدخال Bot Token.' };
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+    const data = await res.json();
+    if (data.ok) {
+      return { success: true, data: data.result };
+    } else {
+      return { success: false, error: data.description || 'تعذر جلب معلومات Webhook' };
+    }
+  } catch (err: any) {
+    return { success: false, error: err.message || '' };
+  }
+}
+
+// Setup and initialize all Telegram sheets in Google Sheets via API
+export async function setupTelegramSheetsInGas(): Promise<{ success: boolean; message?: string }> {
+  try {
+    let res = await fetchGas({ action: 'setupTelegramSheets' }, 'GET');
+    if (!res || res.success === false) {
+      res = await fetchGas({ action: 'setupTelegramSheets' }, 'POST', { action: 'setupTelegramSheets' });
+    }
+    if (res && res.message === 'الإجراء المطلوب غير معروف') {
+      return {
+        success: false,
+        message: 'السكربت السحابي ينفذ إصداراً قديماً من كود Google Apps Script. يرجى إنشاء نشر جديد (New Deployment) ونسخ رابط Web App الجديد ولصقه في الإعدادات.'
+      };
+    }
+    return res;
+  } catch (err: any) {
+    return { success: false, message: err.message || 'تعذر تهيئة الأوراق في Google Sheets' };
+  }
+}
+
+// Bind Telegram student directly in Google Sheet
+export async function bindTelegramUserInGas(payload: {
+  studentName: string;
+  sheetNumber: string;
+  chatId: string;
+  language?: string;
+}): Promise<{ success: boolean; message?: string }> {
+  try {
+    const res = await fetchGas({ action: 'bindTelegramUser' }, 'POST', {
+      action: 'bindTelegramUser',
+      ...payload
+    });
+    if (res && res.message === 'الإجراء المطلوب غير معروف') {
+      return {
+        success: false,
+        message: 'السكربت السحابي ينفذ إصداراً قديماً من كود Google Apps Script. يرجى إنشاء نشر جديد (New Deployment).'
+      };
+    }
+    // Save to local cache as well
+    saveLinkedTelegramStudent({
+      studentName: payload.studentName,
+      sheetNumber: payload.sheetNumber,
+      chatId: payload.chatId,
+      language: (payload.language === 'en' || payload.language === 'th' ? payload.language : 'ar'),
+      isRegistered: true
+    });
+    return res;
+  } catch (err: any) {
+    return { success: false, message: err.message || 'تعذر ربط الطالب في Google Sheets' };
+  }
+}
+
+// Simulate Telegram webhook message directly to Google Apps Script Web App
+export async function simulateTelegramWebhookInGas(sheetNumber: string, studentName: string): Promise<{ success: boolean; message?: string; rawResponse?: any }> {
+  try {
+    const fakeUpdate = {
+      update_id: Math.floor(Math.random() * 1000000),
+      message: {
+        message_id: Math.floor(Math.random() * 100000),
+        from: {
+          id: 999888777,
+          first_name: studentName || 'طالب تجريبي',
+          username: 'test_student'
+        },
+        chat: {
+          id: 999888777,
+          first_name: studentName || 'طالب تجريبي',
+          type: 'private'
+        },
+        date: Math.floor(Date.now() / 1000),
+        text: `/start S${sheetNumber}_ar`
+      }
+    };
+
+    let res = await fetchGas({ action: 'simulateTelegramWebhook', sheetNumber, studentName }, 'GET');
+    if (!res || res.message === 'الإجراء المطلوب غير معروف' || res.success === false) {
+      res = await fetchGas({ action: 'simulateTelegramWebhook' }, 'POST', {
+        action: 'simulateTelegramWebhook',
+        sheetNumber,
+        studentName,
+        update_id: fakeUpdate.update_id,
+        message: fakeUpdate.message,
+        update: fakeUpdate
+      });
+    }
+
+    if (res && res.message === 'الإجراء المطلوب غير معروف') {
+      return {
+        success: false,
+        message: 'السكربت السحابي ينفذ إصداراً قديماً. يمكنك تنفيذ دالة RUN_SETUP_TELEGRAM_SHEETS مباشرة من محرر Apps Script بالضغط على زر (Run / تشغيل) لإنشاء الأوراق فوراً دون انتظار النشر!'
+      };
+    }
+    return res;
+  } catch (err: any) {
+    return { success: false, message: err.message || 'فشلت محاكاة التلغرام' };
+  }
+}
+
+// Trigger Google Apps Script to scan external teacher correction sheet (A1) and send telegram messages
+export async function syncTeacherCorrectionsFromA1(forceRescan: boolean = false): Promise<{ success: boolean; processedCount?: number; unlinkedCount?: number; message?: string }> {
+  try {
+    let res = await fetchGas({ action: 'checkAndSendTeacherCorrections', forceRescan: forceRescan ? 'true' : 'false' }, 'GET');
+    if (!res || res.message === 'الإجراء المطلوب غير معروف' || res.success === false) {
+      res = await fetchGas({ action: 'checkAndSendTeacherCorrections' }, 'POST', {
+        action: 'checkAndSendTeacherCorrections',
+        forceRescan: forceRescan
+      });
+    }
+    return res || { success: false, message: 'تعذر الاتصال بـ Google Apps Script' };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'تعذر فحص تصحيحات الأستاذ من شيت A1' };
+  }
+}
+
+// Install Time-Driven Clock Trigger in Google Apps Script to auto-check A1 sheet every 1 minute
+export async function installAutomaticCorrectionTriggerInGas(): Promise<{ success: boolean; message?: string }> {
+  try {
+    let res = await fetchGas({ action: 'installAutomaticCorrectionTrigger' }, 'GET');
+    if (!res || res.message === 'الإجراء المطلوب غير معروف' || res.success === false) {
+      res = await fetchGas({ action: 'installAutomaticCorrectionTrigger' }, 'POST', {
+        action: 'installAutomaticCorrectionTrigger'
+      });
+    }
+    return res || { success: false, message: 'تعذر تثبيت المشغل التلقائي' };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'تعذر تثبيت المشغل التلقائي' };
+  }
+}
+
+// Clear correction cache to allow re-scanning all rows
+export async function clearCorrectionCacheInGas(): Promise<{ success: boolean; message?: string }> {
+  try {
+    let res = await fetchGas({ action: 'clearCorrectionCache' }, 'GET');
+    if (!res || res.message === 'الإجراء المطلوب غير معروف' || res.success === false) {
+      res = await fetchGas({ action: 'clearCorrectionCache' }, 'POST', {
+        action: 'clearCorrectionCache'
+      });
+    }
+    return res || { success: false, message: 'تعذر مسح كاش التصحيحات' };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'تعذر مسح كاش التصحيحات' };
+  }
+}
+
+
 

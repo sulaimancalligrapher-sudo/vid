@@ -6,10 +6,11 @@ import {
   Mic, Image as ImageIcon, ShieldCheck, Lock,
   Trash2, ChevronDown, ChevronUp, Link as LinkIcon, Settings as SettingsIcon,
   HelpCircle, MessageSquare, Calendar, Clock, Eye, EyeOff,
-  UserCheck, Users, UserPlus, User, ChevronLeft, Edit3, Sparkles, Globe
+  UserCheck, Users, UserPlus, User, ChevronLeft, Edit3, Sparkles, Globe, Send, Bot
 } from 'lucide-react';
 import { AdminQuestionRow, AdminAnswerRow, AdminQuestionItem } from '../types';
 import TranslationEditor from './TranslationEditor';
+import TelegramManager from './TelegramManager';
 import { 
   fetchAdminQuestions, saveAdminQuestion, deleteAdminQuestion, fetchAdminAnswers, 
   updateAdminAnswer, saveBatchAdminQuestions,
@@ -22,7 +23,7 @@ interface AdminPanelProps {
 }
 
 export default function AdminPanel({ onClose }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'questions' | 'answers' | 'translations'>('questions');
+  const [activeTab, setActiveTab] = useState<'questions' | 'answers' | 'translations' | 'telegram'>('questions');
 
   // Questions state
   const [questions, setQuestions] = useState<AdminQuestionRow[]>([]);
@@ -674,6 +675,18 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
             <Globe className="w-4 h-4" />
             <span>محرر نصوص الواجهة والترجمة 🇸🇦🇹🇭🇬🇧</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('telegram')}
+            className={`px-5 py-3 rounded-t-2xl font-bold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+              activeTab === 'telegram'
+                ? 'bg-slate-900 text-amber-400 border-amber-500 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 border-transparent'
+            }`}
+          >
+            <Send className="w-4 h-4 text-sky-400" />
+            <span>ربط التلغرام والإشعارات ✈️</span>
+          </button>
         </div>
 
         {/* Tab Content Body */}
@@ -949,6 +962,16 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
           {activeTab === 'translations' && (
             <div className="py-2">
               <TranslationEditor />
+            </div>
+          )}
+
+          {/* TAB 4: TELEGRAM INTEGRATION & NOTIFICATIONS */}
+          {activeTab === 'telegram' && (
+            <div className="py-2">
+              <TelegramManager 
+                answers={answers} 
+                onNotify={(text, type) => setNotice({ text, type })} 
+              />
             </div>
           )}
         </div>

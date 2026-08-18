@@ -147,3 +147,45 @@ export interface StudentCorrection {
   audioCorrection: CorrectionSectionData;
 }
 
+export interface TelegramConfig {
+  botToken: string;
+  botUsername?: string;
+  teacherChatId: string;
+  groupChatId: string;
+  enableTeacherPrivate: boolean;
+  enableStudentPrivate: boolean;
+  enableGroupNotify: boolean;
+  sendMediaFiles: boolean;
+}
+
+export interface TelegramUserBinding {
+  studentName: string;
+  sheetNumber: string;
+  chatId: string;
+  username?: string;
+  language: 'ar' | 'th' | 'en';
+  isRegistered: boolean;
+  updatedAt?: string;
+}
+
+export interface TelegramTemplateItem {
+  key: string;
+  title: string;
+  description: string;
+  ar: string;
+  th: string;
+  en: string;
+  variables: string[];
+}
+
+export interface TelegramBroadcastMessage {
+  recipientType: 'all' | 'specific_student' | 'teacher' | 'group';
+  targetStudentName?: string;
+  targetSheetNumber?: string;
+  messageType: 'text' | 'photo' | 'voice' | 'video' | 'link';
+  text: string;
+  mediaUrl?: string;
+  buttonLabel?: string;
+  buttonUrl?: string;
+}
+

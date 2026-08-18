@@ -219,9 +219,37 @@ export default function StudentCorrectionModal({
       }
     }
 
+    // Format rawResult as a percentage if it's a decimal (e.g., 0.4 -> 40%, 1 -> 100%), fraction, or numeric
+    let formattedResult = rawResult;
+    if (formattedResult && formattedResult !== '-') {
+      const cleanStr = formattedResult.replace('=', '').trim();
+      if (cleanStr.includes('%')) {
+        formattedResult = cleanStr;
+      } else if (cleanStr.includes('/')) {
+        const parts = cleanStr.split('/');
+        const num = parseFloat(parts[0]);
+        const den = parseFloat(parts[1]);
+        if (!isNaN(num) && !isNaN(den) && den > 0) {
+          formattedResult = `${Math.round((num / den) * 100)}%`;
+        }
+      } else {
+        const numVal = parseFloat(cleanStr);
+        if (!isNaN(numVal)) {
+          if (numVal <= 1 && numVal >= 0) {
+            // Decimal fraction from Google Sheets like 0.4, 0.95, 1 -> 40%, 95%, 100%
+            formattedResult = `${Math.round(numVal * 100)}%`;
+          } else if (numVal <= 100) {
+            formattedResult = `${Math.round(numVal)}%`;
+          } else {
+            formattedResult = `${numVal}%`;
+          }
+        }
+      }
+    }
+
     return {
       formula: rawFormula || '-',
-      result: rawResult || '-'
+      result: formattedResult || '-'
     };
   };
 
@@ -234,13 +262,15 @@ export default function StudentCorrectionModal({
         return {
           starsCount: 5,
           text: t('rating_calculating', 'جاري احتساب النتيجة النهائية... ⏳'),
-          color: 'text-amber-300'
+          color: 'text-amber-300',
+          percentage: 50
         };
       }
       return {
         starsCount: 0,
         text: t('rating_pending', 'في انتظار الإكمال والتقييم ⏳'),
-        color: 'text-slate-500'
+        color: 'text-slate-500',
+        percentage: 0
       };
     }
 
@@ -259,8 +289,11 @@ export default function StudentCorrectionModal({
     } else {
       const val = parseFloat(str);
       if (!isNaN(val)) {
-        if (val <= 10) percentage = val * 10;
-        else if (val <= 100) percentage = val;
+        if (val <= 1 && val >= 0) {
+          percentage = Math.round(val * 100);
+        } else if (val <= 100) {
+          percentage = val;
+        }
       }
     }
 
