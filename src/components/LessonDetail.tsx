@@ -1428,13 +1428,13 @@ export default function LessonDetail({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-4 md:p-6 text-right font-sans" dir="rtl">
+    <div className="w-full max-w-4xl mx-auto px-2 py-3 sm:p-4 md:p-6 text-right font-sans" dir="rtl">
       {/* Top Action Bar */}
-      <div className="flex items-center justify-between gap-3 mb-6">
+      <div className="flex items-center justify-between gap-3 mb-4 sm:mb-6">
         <button
           onClick={handleExitLesson}
           disabled={finalCompleting}
-          className="px-5 py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-sky-100 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 rounded-2xl cursor-pointer text-xs font-extrabold transition-all flex items-center gap-1.5 active:scale-95 shadow-sm disabled:opacity-50"
+          className="px-4 sm:px-5 py-2.5 sm:py-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-sky-100 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 rounded-2xl cursor-pointer text-xs font-extrabold transition-all flex items-center gap-1.5 active:scale-95 shadow-sm disabled:opacity-50"
         >
           <ArrowRight className="w-4 h-4" />
           <span>{t('save_and_back')}</span>
@@ -1442,7 +1442,7 @@ export default function LessonDetail({
 
         <button
           onClick={() => setShowCorrectionModal(true)}
-          className="px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-extrabold rounded-2xl cursor-pointer text-xs transition-all flex items-center gap-1.5 active:scale-95 shadow-md shadow-amber-500/10"
+          className="px-3.5 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-extrabold rounded-2xl cursor-pointer text-xs transition-all flex items-center gap-1.5 active:scale-95 shadow-md shadow-amber-500/10"
         >
           <Award className="w-4 h-4" />
           <span>تصحيح هذا الدرس 📝</span>
@@ -1450,18 +1450,18 @@ export default function LessonDetail({
       </div>
 
       {/* Header Info */}
-      <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-6 mb-6 shadow-lg shadow-sky-100/40 dark:shadow-none relative overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 mb-4 sm:mb-6 shadow-lg shadow-sky-100/40 dark:shadow-none relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
           <div>
             <span className="text-amber-600 text-xs font-bold block mb-1">{t('active_lesson')} #{lessonIndex + 1}</span>
-            <h1 className="text-xl md:text-2xl font-extrabold text-slate-800 dark:text-slate-100">{lesson.comment || 'درس غير معنون'}</h1>
+            <h1 className="text-lg sm:text-xl md:text-2xl font-extrabold text-slate-800 dark:text-slate-100">{lesson.comment || 'درس غير معنون'}</h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-1.5">
               {t('written_word')} <span className="text-indigo-600 dark:text-indigo-400 font-extrabold bg-indigo-50/70 dark:bg-indigo-950/40 px-3 py-1 rounded-xl text-sm border border-indigo-100/50 dark:border-indigo-900/50">{lesson.word}</span>
             </p>
           </div>
           {isReviewOnly && (
-            <div className="px-4 py-2 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/50 rounded-2xl text-indigo-600 dark:text-indigo-400 text-xs font-extrabold shadow-sm">
+            <div className="px-3.5 py-1.5 sm:px-4 sm:py-2 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/50 rounded-2xl text-indigo-600 dark:text-indigo-400 text-xs font-extrabold shadow-sm self-start sm:self-auto">
               {t('review_mode_badge')}
             </div>
           )}
@@ -1539,17 +1539,17 @@ export default function LessonDetail({
               {lesson.youtubeUrl && (
                 <div
                   ref={videoCardRef}
-                  className={`bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-3xl p-5 shadow-lg shadow-sky-100/40 dark:shadow-none flex flex-col relative transition-all ${
-                    ytFullscreen ? 'fixed inset-0 z-50 w-screen h-screen rounded-none p-6 bg-slate-900 border-none' : ''
+                  className={`bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-1.5 sm:p-5 shadow-lg shadow-sky-100/40 dark:shadow-none flex flex-col relative transition-all ${
+                    ytFullscreen ? 'fixed inset-0 z-50 w-screen h-screen rounded-none p-1 sm:p-6 bg-slate-950 border-none' : ''
                   }`}
                 >
-                  <h3 className={`text-sm font-bold text-slate-800 dark:text-slate-100 mb-3.5 flex items-center gap-1.5 justify-center ${ytFullscreen ? 'text-base mb-5' : ''}`}>
-                    <Video className="w-5 h-5 text-indigo-500 animate-pulse" />
+                  <h3 className={`text-sm font-bold text-slate-800 dark:text-slate-100 mb-2 sm:mb-3.5 flex items-center gap-1.5 justify-center ${ytFullscreen ? 'text-xs sm:text-base py-1 sm:py-0 mb-1 sm:mb-5 text-slate-200' : ''}`}>
+                    <Video className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500 animate-pulse" />
                     <span>{t('interactive_video')}</span>
                   </h3>
                   
                   {/* Aspect video player frame wrapper */}
-                  <div className={`relative ${ytFullscreen ? 'flex-grow h-0 w-full mb-6' : 'aspect-video w-full mb-3.5'} rounded-2xl overflow-hidden border border-sky-100 dark:border-slate-800 bg-slate-950`}>
+                  <div className={`relative ${ytFullscreen ? 'flex-grow h-0 w-full mb-1 sm:mb-6' : 'aspect-video w-full mb-2 sm:mb-3.5'} rounded-xl sm:rounded-2xl overflow-hidden border border-sky-100 dark:border-slate-800 bg-slate-950`}>
                     {isYtVideo ? (
                       <div id="yt-player-frame" className="w-full h-full" />
                     ) : (
@@ -1591,7 +1591,7 @@ export default function LessonDetail({
                         initial={{ opacity: 0, y: 5 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 5 }}
-                        className="mb-3 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-700 dark:text-amber-300 rounded-xl text-xs font-bold text-center leading-relaxed"
+                        className="mb-2 sm:mb-3 p-2.5 sm:p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-700 dark:text-amber-300 rounded-xl text-xs font-bold text-center leading-relaxed"
                       >
                         {videoSeekError}
                       </motion.div>
@@ -1599,10 +1599,10 @@ export default function LessonDetail({
                   </AnimatePresence>
 
                   {/* Custom Controls */}
-                  <div className="flex items-center justify-between gap-4 p-3 bg-indigo-50/70 dark:bg-slate-950 border border-indigo-100/50 dark:border-slate-800 rounded-2xl w-full shadow-inner">
+                  <div className="flex items-center justify-between gap-1.5 sm:gap-4 p-1.5 sm:p-3 bg-indigo-50/70 dark:bg-slate-950 border border-indigo-100/50 dark:border-slate-800 rounded-xl sm:rounded-2xl w-full shadow-inner">
                     <button
                       onClick={ytPlaying ? handleYtPause : handleYtPlay}
-                      className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all active:scale-90 cursor-pointer shadow-md shadow-indigo-600/20"
+                      className="p-2 sm:p-3 bg-indigo-600 text-white rounded-lg sm:rounded-xl hover:bg-indigo-700 transition-all active:scale-90 cursor-pointer shadow-md shadow-indigo-600/20 shrink-0"
                     >
                       {ytPlaying ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white ml-0.5" />}
                     </button>
@@ -1610,7 +1610,7 @@ export default function LessonDetail({
                     {/* Progress Bar */}
                     <div
                       onClick={handleYtSeekBarClick}
-                      className="flex-grow h-3 bg-indigo-100 dark:bg-indigo-950 rounded-full cursor-pointer relative shadow-inner overflow-hidden"
+                      className="flex-grow h-2.5 sm:h-3 bg-indigo-100 dark:bg-indigo-950 rounded-full cursor-pointer relative shadow-inner overflow-hidden"
                     >
                       <div
                         style={{ width: `${ytProgress}%` }}
@@ -1619,22 +1619,22 @@ export default function LessonDetail({
                     </div>
 
                     {/* Volume */}
-                    <div className="flex items-center gap-2">
-                      <Volume2 className="w-4 h-4 text-indigo-500" />
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                      <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-500" />
                       <input
                         type="range"
                         min="0"
                         max="100"
                         value={ytVolume}
                         onChange={(e) => handleYtVolumeChange(Number(e.target.value))}
-                        className="w-16 h-1 bg-indigo-200 dark:bg-indigo-900 accent-indigo-600 rounded-lg cursor-pointer appearance-none"
+                        className="w-12 sm:w-16 h-1 bg-indigo-200 dark:bg-indigo-900 accent-indigo-600 rounded-lg cursor-pointer appearance-none"
                       />
                     </div>
 
                     {/* Fullscreen Button */}
                     <button
                       onClick={handleToggleFullscreen}
-                      className="p-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 border border-sky-100 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 rounded-xl transition-all active:scale-90 cursor-pointer shadow-sm"
+                      className="p-2 sm:p-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 border border-sky-100 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 rounded-lg sm:rounded-xl transition-all active:scale-90 cursor-pointer shadow-sm shrink-0"
                       title={ytFullscreen ? 'تصغير الشاشة' : 'تكبير الشاشة'}
                     >
                       {ytFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
@@ -1812,9 +1812,9 @@ export default function LessonDetail({
                   </p>
 
                   {/* Word Box */}
-                  <div className="px-8 py-8 bg-[#fffbf4] dark:bg-slate-950 border border-amber-100/50 dark:border-slate-800/80 rounded-3xl relative min-w-[240px] mb-4 w-full shadow-inner transition-colors duration-300">
-                    <div className="text-center py-6 select-none w-full" dir="rtl">
-                      <div className="inline-block text-6xl md:text-8xl font-bold tracking-normal leading-relaxed text-slate-800 dark:text-slate-100 bg-[#faf6ed] dark:bg-slate-900 px-12 py-6 rounded-3xl border border-amber-100/40 dark:border-slate-800/60 shadow-sm whitespace-nowrap transition-colors duration-300">
+                  <div className="px-4 sm:px-8 py-5 sm:py-8 bg-[#fffbf4] dark:bg-slate-950 border border-amber-100/50 dark:border-slate-800/80 rounded-3xl relative min-w-[240px] mb-4 w-full shadow-inner transition-colors duration-300">
+                    <div className="text-center py-4 sm:py-6 select-none w-full overflow-x-auto" dir="rtl">
+                      <div className="inline-block text-5xl sm:text-6xl md:text-8xl font-bold tracking-normal leading-relaxed text-slate-800 dark:text-slate-100 bg-[#faf6ed] dark:bg-slate-900 px-6 sm:px-12 py-3.5 sm:py-6 rounded-3xl border border-amber-100/40 dark:border-slate-800/60 shadow-sm whitespace-nowrap transition-colors duration-300">
                         {groupedLetters.map((char, index) => {
                           const isListened = listenedLetters.has(index);
                           const isActive = activeLetterIdx === index;
@@ -1822,9 +1822,9 @@ export default function LessonDetail({
                             <span
                               key={index}
                               onClick={() => playLetter(lesson.letterSounds[index], index)}
-                              className={`cursor-pointer select-none transition-colors duration-200 hover:text-amber-500 dark:hover:text-amber-400 ${
+                              className={`relative inline-block cursor-pointer select-none transition-all duration-200 hover:text-amber-500 dark:hover:text-amber-400 ${
                                 isActive
-                                  ? 'text-amber-500 dark:text-amber-400 font-extrabold underline decoration-amber-400 dark:decoration-amber-500 decoration-wavy underline-offset-8'
+                                  ? 'text-amber-500 dark:text-amber-400 scale-110 drop-shadow-[0_4px_14px_rgba(245,158,11,0.45)]'
                                   : isListened
                                   ? 'text-emerald-500 dark:text-emerald-400 font-bold'
                                   : 'text-indigo-950 dark:text-indigo-200'
@@ -1832,6 +1832,14 @@ export default function LessonDetail({
                               title={`اضغط للاستماع لصوت الحرف`}
                             >
                               {char}
+                              {/* Cross-browser animated wave underline for active letter */}
+                              {isActive && (
+                                <span className="absolute -bottom-2 sm:-bottom-2.5 left-0 right-0 flex justify-center pointer-events-none">
+                                  <svg className="w-full h-2 sm:h-2.5 text-amber-500 dark:text-amber-400 animate-pulse" viewBox="0 0 32 6" fill="none" preserveAspectRatio="none">
+                                    <path d="M0 3 Q 8 0, 16 3 T 32 3" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                                  </svg>
+                                </span>
+                              )}
                             </span>
                           );
                         })}

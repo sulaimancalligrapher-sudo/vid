@@ -212,22 +212,22 @@ export default function App() {
     <div className="bg-gradient-to-br from-[#faf7f2] via-[#f5efe5] to-[#ebf3ed] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col font-sans selection:bg-amber-500/20 selection:text-amber-800 transition-colors duration-300">
       
       {/* ----------------- TOP BANNER HEADER ----------------- */}
-      <header className="bg-[#fefdfa]/90 dark:bg-slate-900/90 border-b border-amber-100/60 dark:border-slate-800 sticky top-0 z-40 backdrop-blur-md px-4 py-3.5 md:px-6 shadow-sm transition-colors duration-300">
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
+      <header className="bg-[#fefdfa]/90 dark:bg-slate-900/90 border-b border-amber-100/60 dark:border-slate-800 sticky top-0 z-40 backdrop-blur-md px-3 py-2.5 sm:px-6 sm:py-3.5 shadow-sm transition-colors duration-300">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-4">
           
-          {/* Logo / Brand Name depending on Mode */}
-          <div className="flex flex-col sm:flex-row items-center gap-2.5 sm:gap-3 text-center sm:text-right">
+          {/* Row 1 on mobile: Logo + Title + Subtitle in a single horizontal row */}
+          <div className="flex flex-row items-center gap-2.5 sm:gap-3 text-right w-full sm:w-auto justify-start">
             {headerConfig?.logoUrl ? (
               <img
                 src={headerConfig.logoUrl}
                 alt="Logo"
-                className="w-12 h-12 sm:w-10 sm:h-10 rounded-2xl object-cover shadow-md border border-amber-200/60 dark:border-slate-700/80 bg-white dark:bg-slate-800"
+                className="w-10 h-10 sm:w-10 sm:h-10 rounded-2xl object-cover shadow-md border border-amber-200/60 dark:border-slate-700/80 bg-white dark:bg-slate-800 shrink-0"
                 onError={(e) => {
                   (e.currentTarget as HTMLElement).style.display = 'none';
                 }}
               />
             ) : (
-              <div className={`w-12 h-12 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center text-2xl sm:text-xl font-bold shadow-md ${
+              <div className={`w-10 h-10 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center text-xl sm:text-xl font-bold shadow-md shrink-0 ${
                 pageMode === 'admin' 
                   ? 'bg-gradient-to-tr from-purple-500 via-indigo-500 to-indigo-600 shadow-purple-200' 
                   : 'bg-gradient-to-tr from-amber-400 via-orange-400 to-amber-500 shadow-amber-200'
@@ -235,22 +235,22 @@ export default function App() {
                 {pageMode === 'admin' ? '⚡' : '📸'}
               </div>
             )}
-            <div className="flex flex-col items-center sm:items-start text-center sm:text-right">
-              <h1 className="text-sm sm:text-base font-extrabold text-slate-800 dark:text-slate-100 tracking-tight flex items-center justify-center sm:justify-start gap-1.5">
-                <span>
+            <div className="flex flex-col items-start text-right min-w-0 flex-1">
+              <h1 className="text-sm sm:text-base font-extrabold text-slate-800 dark:text-slate-100 tracking-tight flex items-center justify-start gap-1.5 truncate w-full">
+                <span className="truncate">
                   {pageMode === 'admin'
                     ? (headerConfig?.title ? `${headerConfig.title} - الإدارة` : 'بوابة التحكم الإداري وقاعدة البيانات')
                     : (headerConfig?.title || 'ملتقط الوسائط للطلاب')}
                 </span>
                 {pageMode === 'admin' ? (
-                  <span className="text-[10px] px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 rounded-full font-bold">
+                  <span className="text-[10px] px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 rounded-full font-bold shrink-0">
                     ?page=admin
                   </span>
                 ) : (
-                  <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
+                  <Sparkles className="w-4 h-4 text-amber-500 animate-pulse shrink-0" />
                 )}
               </h1>
-              <p className="text-[11px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-bold mt-0.5">
+              <p className="text-[11px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-bold mt-0.5 truncate w-full">
                 {pageMode === 'admin'
                   ? 'إدارة الشيت، الأسئلة، وإعدادات الربط'
                   : (headerConfig?.subtitle || 'نظام القراءة والواجبات المطور')}
@@ -258,8 +258,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* Quick Controls & Dynamic Buttons */}
-          <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-end w-full sm:w-auto">
+          {/* Row 2 on mobile: Quick Controls & Dynamic Buttons underneath in row 2 */}
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-center sm:justify-end w-full sm:w-auto pt-1 sm:pt-0 border-t border-amber-100/40 sm:border-t-0 dark:border-slate-800/40">
             {/* Dynamic Buttons from header sheet */}
             {headerConfig?.buttons && headerConfig.buttons.length > 0 && (
               <div className="flex items-center gap-1.5 flex-wrap justify-center sm:justify-end">
