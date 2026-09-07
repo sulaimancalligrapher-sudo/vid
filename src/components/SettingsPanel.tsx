@@ -392,7 +392,7 @@ function doPost(e) {
       response = updateAdminAnswer(payload);
     } else if (action === 'saveTelegramConfig') {
       response = saveTelegramConfig(payload);
-    } else if (action === 'saveTelegramTemplate') {
+    } else if (action === 'saveTelegramTemplate' || action === 'saveTelegramTemplates') {
       response = saveTelegramTemplate(payload);
     } else if (action === 'bindTelegramUser') {
       response = bindTelegramUser(payload);
@@ -400,6 +400,8 @@ function doPost(e) {
       response = sendTelegramNotification(payload);
     } else if (action === 'setupTelegramSheets') {
       response = setupTelegramSheets();
+    } else if (action === 'getAllSettingsStudents') {
+      response = getAllSettingsStudents();
     } else {
       response = { success: false, message: 'الإجراء المطلوب غير معروف' };
     }
@@ -1146,9 +1148,11 @@ function saveImageLink(sheet_number, username, comment, link, timestamp, word) {
   sheet.getRange(rowNum, 38).setValue(newCount);
   calculatePercentages(sheet, rowNum);
 
-  // إرسال إشعار التلغرام الفوري للأستاذ والطالب (السيناريو 1 أو 2 مع نوع التعديل)
-  var isResubmission = newCount > 1;
-  notifyOnHomeworkSubmission(sheet, rowNum, isResubmission, 'image');
+  // إشعار التعديل يُرسل فقط إذا كان هذا إعادة رفع للواجب بعد تصحيحه (إعادة)، أما في التسليم الأول فينتظر اكتمال الدرس كاملاً (AO = 'تم')
+  var currentAO = (sheet.getRange(rowNum, 41).getValue() || '').toString().trim();
+  if (newCount > 1 && (currentAO === 'اعادة' || currentAO === 'إعادة' || currentAO === 'تم')) {
+    notifyOnHomeworkSubmission(sheet, rowNum, true, 'image');
+  }
 }
 
 function saveRecordingLink(sheet_number, username, comment, link, timestamp, word) {
@@ -1165,9 +1169,11 @@ function saveRecordingLink(sheet_number, username, comment, link, timestamp, wor
   sheet.getRange(rowNum, 37).setValue(newCount);
   calculatePercentages(sheet, rowNum);
 
-  // إرسال إشعار التلغرام الفوري للأستاذ والطالب (السيناريو 1 أو 2 مع نوع التعديل)
-  var isResubmission = newCount > 1;
-  notifyOnHomeworkSubmission(sheet, rowNum, isResubmission, 'sound');
+  // إشعار التعديل يُرسل فقط إذا كان هذا إعادة رفع للتسجيل بعد تصحيحه (إعادة)، أما في التسليم الأول فينتظر اكتمال الدرس كاملاً (AO = 'تم')
+  var currentAO = (sheet.getRange(rowNum, 41).getValue() || '').toString().trim();
+  if (newCount > 1 && (currentAO === 'اعادة' || currentAO === 'إعادة' || currentAO === 'تم')) {
+    notifyOnHomeworkSubmission(sheet, rowNum, true, 'sound');
+  }
 }
 
 // ------------------- تتبع اكتمال الدروس ودرجات الطالب -------------------
@@ -1812,8 +1818,35 @@ function setupTelegramSheets() {
     var tSheet = ss.getSheetByName('Telegram_Templates');
     if (!tSheet) {
       tSheet = ss.insertSheet('Telegram_Templates');
-      tSheet.appendRow(['Template Key', 'Title', 'Text Arabic', 'Text Thai', 'Text English']);
-      tSheet.getRange(1, 1, 1, 5).setBackground('#D97706').setFontColor('#FFFFFF').setFontWeight('bold');
+      tSheet.appendRow(['Template Key', 'Title', 'Text Arabic', 'Text Thai', 'Text English', 'Button Text AR', 'Button Text TH', 'Button Text EN', 'Button URL']);
+      tSheet.getRange(1, 1, 1, 9).setBackground('#D97706').setFontColor('#FFFFFF').setFontWeight('bold');
+      tSheet.appendRow([
+        'homework_received',
+        'تأكيد استلام الواجب (للطالب)',
+        '✅ تم استلام واجبك بنجاح يا {student}!\\n📚 الدرس: {lesson}\\nتم إرسال إجاباتك وملفاتك إلى الأستاذ، وسيصلك إشعار التصحيح فور اعتماده 🌸',
+        '✅ ได้รับการบ้านเรียบร้อยแล้ว คุณ {student}!\\n📚 บทเรียน: {lesson}\\nส่งคำตอบและไฟล์ไปยังอาจารย์แล้ว และจะแจ้งผลการตรวจทันทีที่เสร็จสิ้น 🌸',
+        '✅ Your homework for: 📚 {lesson} has been received, {student}!\\nYour answers and files have been sent to the teacher. You will be notified once reviewed 🌸',
+        '🔗 فتح ملف الواجب',
+        '🔗 เปิดไฟล์การบ้าน',
+        '🔗 View Homework File',
+        ''
+      ]);
+      tSheet.appendRow([
+        'new_homework_teacher',
+        'إشعار تسليم واجب جديد (للأستاذ والقروب)',
+        '📝 تسليم واجب جديد\\n👤 الطالب: {student}\\n🔢 رقم الطالب/الشيت: #{sheet}\\n📚 الموضوع: {lesson}\\n📊 النتيجة الكلية: {score}',
+        '📝 ส่งการบ้านใหม่\\n👤 นักเรียน: {student}\\n🔢 ชีท: #{sheet}\\n📚 บทเรียน: {lesson}\\n📊 คะแนนรวม: {score}',
+        '📝 New Homework Submission\\n👤 Student: {student}\\n🔢 Sheet: #{sheet}\\n📚 Lesson: {lesson}\\n📊 Total Score: {score}',
+        '', '', '', ''
+      ]);
+      tSheet.appendRow([
+        'resubmit_homework_teacher',
+        'إشعار إعادة تسليم / تعديل واجب (للأستاذ والقروب)',
+        '🔄 تنبيه: إعادة تسليم واجب\\n👤 الطالب: {student}\\n🔢 رقم الطالب/الشيت: #{sheet}\\n📚 الموضوع: {lesson}\\n⚠️ نوع التحديث: {type}\\n📊 النتيجة الكلية: {score}',
+        '🔄 มีการส่งการบ้านซ้ำ/แก้ไข\\n👤 นักเรียน: {student}\\n🔢 ชีท: #{sheet}\\n📚 บทเรียน: {lesson}\\n⚠️ ประเภทการอัปเดต: {type}\\n📊 คะแนนรวม: {score}',
+        '🔄 Homework Resubmission / Update\\n👤 Student: {student}\\n🔢 Sheet: #{sheet}\\n📚 Lesson: {lesson}\\n⚠️ Update Type: {type}\\n📊 Total Score: {score}',
+        '', '', '', ''
+      ]);
     }
 
     // 4. ورقة سجلات الأحداث Telegram_Logs
@@ -1828,6 +1861,72 @@ function setupTelegramSheets() {
   } catch (err) {
     return { success: false, message: err.message };
   }
+}
+
+function normalizeLanguage(lang) {
+  if (!lang) return 'ar';
+  var str = lang.toString().trim().toLowerCase();
+  if (
+    str === 'th' || str === 'thai' || str === 'thailand' ||
+    str.indexOf('ไทย') !== -1 || str.indexOf('ภาษาไทย') !== -1 ||
+    str.indexOf('تايلاند') !== -1 || str.indexOf('تايلند') !== -1 ||
+    str.indexOf('🇹🇭') !== -1
+  ) {
+    return 'th';
+  }
+  if (
+    str === 'en' || str === 'eng' || str === 'english' ||
+    str.indexOf('انجليز') !== -1 || str.indexOf('إنجليز') !== -1 ||
+    str.indexOf('انكليز') !== -1 || str.indexOf('إنكليز') !== -1 ||
+    str.indexOf('🇬🇧') !== -1 || str.indexOf('🇺🇸') !== -1
+  ) {
+    return 'en';
+  }
+  return 'ar';
+}
+
+function getTelegramTemplateInfo(templateKey, lang, defaultText, defaultBtnText, defaultBtnUrl) {
+  try {
+    var ss = getSpreadsheet();
+    if (!ss) return { text: defaultText, buttonText: defaultBtnText || '', buttonUrl: defaultBtnUrl || '' };
+    var sheet = ss.getSheetByName('Telegram_Templates');
+    if (!sheet) return { text: defaultText, buttonText: defaultBtnText || '', buttonUrl: defaultBtnUrl || '' };
+    var data = sheet.getDataRange().getValues();
+    var normLang = normalizeLanguage(lang);
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] && data[i][0].toString().trim() === templateKey.trim()) {
+        var txt = defaultText;
+        if (normLang === 'th' && data[i][3]) txt = data[i][3].toString();
+        else if (normLang === 'en' && data[i][4]) txt = data[i][4].toString();
+        else if (data[i][2]) txt = data[i][2].toString();
+
+        var btnText = '';
+        if (normLang === 'th' && data[i][6]) btnText = data[i][6].toString();
+        else if (normLang === 'en' && data[i][7]) btnText = data[i][7].toString();
+        else if (data[i][5]) btnText = data[i][5].toString();
+        else btnText = (defaultBtnText || '');
+
+        var btnUrl = data[i][8] ? data[i][8].toString().trim() : (defaultBtnUrl || '');
+        return { text: txt, buttonText: btnText, buttonUrl: btnUrl };
+      }
+    }
+    return { text: defaultText, buttonText: defaultBtnText || '', buttonUrl: defaultBtnUrl || '' };
+  } catch (e) {
+    return { text: defaultText, buttonText: defaultBtnText || '', buttonUrl: defaultBtnUrl || '' };
+  }
+}
+
+function getTelegramTemplateText(templateKey, lang, defaultText) {
+  return getTelegramTemplateInfo(templateKey, lang, defaultText).text;
+}
+
+function renderTemplate(template, vars) {
+  var res = template || '';
+  for (var k in vars) {
+    var regex = new RegExp('\\{' + k + '\\}', 'g');
+    res = res.replace(regex, vars[k] !== undefined && vars[k] !== null ? vars[k] : '');
+  }
+  return res;
 }
 
 function logTelegramEvent(rawText, chatId, sheetNumber, studentName, status) {
@@ -1931,7 +2030,7 @@ function getTelegramTemplates() {
     if (!ss) return [];
     var sheet = ss.getSheetByName('Telegram_Templates');
     if (!sheet) return [];
-    var data = sheet.getDataRange().getValues();
+    var data = sheet.getDataRange().getDisplayValues();
     var list = [];
     for (var i = 1; i < data.length; i++) {
       if (data[i][0]) {
@@ -1940,7 +2039,11 @@ function getTelegramTemplates() {
           title: data[i][1] ? data[i][1].toString().trim() : '',
           text_ar: data[i][2] ? data[i][2].toString().trim() : '',
           text_th: data[i][3] ? data[i][3].toString().trim() : '',
-          text_en: data[i][4] ? data[i][4].toString().trim() : ''
+          text_en: data[i][4] ? data[i][4].toString().trim() : '',
+          button_text_ar: data[i][5] ? data[i][5].toString().trim() : '',
+          button_text_th: data[i][6] ? data[i][6].toString().trim() : '',
+          button_text_en: data[i][7] ? data[i][7].toString().trim() : '',
+          button_url: data[i][8] ? data[i][8].toString().trim() : ''
         });
       }
     }
@@ -1957,12 +2060,36 @@ function saveTelegramTemplate(payload) {
     var sheet = ss.getSheetByName('Telegram_Templates');
     if (!sheet) {
       sheet = ss.insertSheet('Telegram_Templates');
-      sheet.appendRow(['Template Key', 'Title', 'Text Arabic', 'Text Thai', 'Text English']);
+      sheet.appendRow(['Template Key', 'Title', 'Text Arabic', 'Text Thai', 'Text English', 'Button Text AR', 'Button Text TH', 'Button Text EN', 'Button URL']);
+      sheet.getRange(1, 1, 1, 9).setBackground('#D97706').setFontColor('#FFFFFF').setFontWeight('bold');
     }
+    
+    // إذا كانت الحمولة تحتوي على مصفوفة قوالب متعددة templates
+    if (payload && payload.templates && Array.isArray(payload.templates)) {
+      sheet.clear();
+      sheet.appendRow(['Template Key', 'Title', 'Text Arabic', 'Text Thai', 'Text English', 'Button Text AR', 'Button Text TH', 'Button Text EN', 'Button URL']);
+      sheet.getRange(1, 1, 1, 9).setBackground('#D97706').setFontColor('#FFFFFF').setFontWeight('bold');
+      for (var t = 0; t < payload.templates.length; t++) {
+        var item = payload.templates[t];
+        sheet.appendRow([
+          item.key || '',
+          item.title || item.key || '',
+          item.ar || item.text_ar || '',
+          item.th || item.text_th || '',
+          item.en || item.text_en || '',
+          item.buttonTextAr || item.button_text_ar || '',
+          item.buttonTextTh || item.button_text_th || '',
+          item.buttonTextEn || item.button_text_en || '',
+          item.buttonUrl || item.button_url || ''
+        ]);
+      }
+      return { success: true, message: 'تم حفظ وتحديث جميع القوالب في الشيت بنجاح' };
+    }
+
     var data = sheet.getDataRange().getValues();
     var rowIndex = -1;
     for (var i = 1; i < data.length; i++) {
-      if (data[i][0] && data[i][0].toString().trim() === payload.key.trim()) {
+      if (data[i][0] && data[i][0].toString().trim() === (payload.key || '').trim()) {
         rowIndex = i + 1;
         break;
       }
@@ -1970,12 +2097,16 @@ function saveTelegramTemplate(payload) {
     var rowData = [
       payload.key,
       payload.title || '',
-      payload.text_ar || '',
-      payload.text_th || '',
-      payload.text_en || ''
+      payload.text_ar || payload.ar || '',
+      payload.text_th || payload.th || '',
+      payload.text_en || payload.en || '',
+      payload.buttonTextAr || payload.button_text_ar || '',
+      payload.buttonTextTh || payload.button_text_th || '',
+      payload.buttonTextEn || payload.button_text_en || '',
+      payload.buttonUrl || payload.button_url || ''
     ];
     if (rowIndex !== -1) {
-      sheet.getRange(rowIndex, 1, 1, 5).setValues([rowData]);
+      sheet.getRange(rowIndex, 1, 1, 9).setValues([rowData]);
     } else {
       sheet.appendRow(rowData);
     }
@@ -1991,27 +2122,98 @@ function getTelegramUsers() {
     if (!ss) return {};
     var sheet = ss.getSheetByName('Telegram_Users');
     if (!sheet) return {};
-    var data = sheet.getDataRange().getValues();
+    // استخدام getDisplayValues لضمان قراءة القيم الناتجة من معادلات IMPORTRANGE و QUERY الخارجية
+    var data = sheet.getDataRange().getDisplayValues();
     var bindings = {};
     for (var i = 1; i < data.length; i++) {
-      var sName = data[i][0] ? data[i][0].toString().trim() : '';
-      var sSheet = data[i][1] ? data[i][1].toString().trim() : '';
-      var chatId = data[i][2] ? data[i][2].toString().trim() : '';
-      var lang = data[i][3] ? data[i][3].toString().trim() : 'ar';
-      if (sName) {
-        var key = (sName + '__' + sSheet).toLowerCase();
+      var row = data[i];
+      if (!row || row.length === 0) continue;
+
+      var sName = '';
+      var sSheet = '';
+      var chatId = '';
+      var rawLang = 'ar';
+      var linkedAt = '';
+
+      // فحص إذا كان العمود الأول يبدأ برقم معرف الدردشة Chat ID (مثل 6291827419)
+      if (row[0] && /^\d{5,}$/.test(row[0].toString().trim())) {
+        chatId = row[0].toString().trim();
+        sName = row[2] ? row[2].toString().trim() : (row[1] ? row[1].toString().trim() : '');
+        sSheet = row[3] ? row[3].toString().trim() : '';
+        rawLang = row[5] ? row[5].toString().trim() : (row[4] ? row[4].toString().trim() : 'ar');
+        linkedAt = row[4] ? row[4].toString() : '';
+      } else {
+        // النمط القياسي: اسم الطالب (0)، رقم الشيت (1)، Chat ID (2)، اللغة (3)
+        sName = row[0] ? row[0].toString().trim() : '';
+        sSheet = row[1] ? row[1].toString().trim() : '';
+        chatId = row[2] ? row[2].toString().trim() : '';
+        rawLang = row[3] ? row[3].toString().trim() : 'ar';
+        linkedAt = row[4] ? row[4].toString() : '';
+      }
+
+      var normLang = normalizeLanguage(rawLang);
+
+      if (sSheet || chatId || sName) {
+        var key = ((sName || 'student') + '__' + (sSheet || chatId)).toLowerCase();
         bindings[key] = {
           studentName: sName,
           sheetNumber: sSheet,
           chatId: chatId,
-          language: lang,
-          linkedAt: data[i][4] ? data[i][4].toString() : ''
+          language: normLang,
+          rawLanguage: rawLang,
+          linkedAt: linkedAt
         };
       }
     }
     return bindings;
   } catch (err) {
     return {};
+  }
+}
+
+function findStudentNameBySheetNumber(sheetNumber) {
+  try {
+    if (!sheetNumber) return '';
+    var sStr = sheetNumber.toString().trim();
+    var ss = getSpreadsheet();
+    if (!ss) return '';
+
+    // 1) فحص ورقة Telegram_Users
+    var usersSheet = ss.getSheetByName('Telegram_Users');
+    if (usersSheet) {
+      var uData = usersSheet.getDataRange().getValues();
+      for (var u = 1; u < uData.length; u++) {
+        var uRow = uData[u];
+        // العمود الثاني (index 1) أو العمود الرابع (index 3)
+        if (uRow[1] && uRow[1].toString().trim() === sStr && uRow[0]) {
+          return uRow[0].toString().trim();
+        }
+        if (uRow[3] && uRow[3].toString().trim() === sStr && uRow[2]) {
+          return uRow[2].toString().trim();
+        }
+      }
+    }
+
+    // 2) فحص ورقة Settings
+    var settingsSheet = ss.getSheetByName('Settings');
+    if (settingsSheet) {
+      var data = settingsSheet.getDataRange().getValues();
+      for (var r = 1; r < data.length; r++) {
+        var sNumB = data[r][1] ? data[r][1].toString().trim() : '';
+        var userC = data[r][2] ? data[r][2].toString().trim() : '';
+        if (sNumB === sStr && userC) {
+          return userC;
+        }
+        var userZ = data[r][25] ? data[r][25].toString().trim() : '';
+        var sNumAA = data[r][26] ? data[r][26].toString().trim() : '';
+        if (sNumAA === sStr && userZ) {
+          return userZ;
+        }
+      }
+    }
+    return '';
+  } catch (err) {
+    return '';
   }
 }
 
@@ -2193,9 +2395,11 @@ function notifyOnHomeworkSubmission(sheet, rowNum, isResubmission, updateType) {
     var totalScore = rowValues[38] ? rowValues[38].toString().trim() : (rowValues[39] ? rowValues[39].toString().trim() : ''); // العمود AM (39) - النتيجة الكلية
     var aoStatus = (rowValues[40] !== undefined && rowValues[40] !== null) ? rowValues[40].toString().trim() : (sheet.getRange(rowNum, 41).getValue() || '').toString().trim(); // العمود AO (41) - حالة الإكمال
 
-    // الشرط الأساسي: إرسال الرسالة فقط عند اكتمال جميع الأجزاء وكتابة "تم" في العمود AO
-    if (aoStatus !== 'تم') {
-      return; // إلغاء إرسال أي إشعار إذا كانت الإجابة ناقصة أو لم تكتمل بعد
+    // الشرط الأساسي: إرسال الرسالة فقط عند اكتمال الواجب كاملاً (العمود AO = 'تم') أو في حال إعادة التسليم الصريحة
+    var isRedo = isResubmission === true && (aoStatus === 'اعادة' || aoStatus === 'إعادة' || aoStatus === 'تم');
+    if (aoStatus !== 'تم' && !isRedo) {
+      logTelegramEvent('فحص حالة الإكمال AO', '', sheetNumber, studentName, 'تم تخطي الإرسال لأن الدرس لم يكتمل بعد (حالة العمود AO الحالية: "' + aoStatus + '" وليست "تم")');
+      return;
     }
 
     if (!studentName && sheetNumber) {
@@ -2237,61 +2441,47 @@ function notifyOnHomeworkSubmission(sheet, rowNum, isResubmission, updateType) {
 
     var nl = String.fromCharCode(10);
 
-    // 1) بناء رسالة الأستاذ / القروب وقائمة الأزرار التفاعلية المخصصة
+    // 1) بناء رسالة الأستاذ / القروب وقائمة الأزرار التفاعلية المخصصة من القالب Telegram_Templates
     var teacherMsg = '';
     var actionButtons = [];
-    var photoToSend = '';
+    var photoToSend = imageUrl;
+    var formattedScore = totalScore ? (totalScore.toString().indexOf('%') !== -1 ? totalScore : (totalScore + '%')) : 'قيد الاحتساب';
 
     if (isResubmission) {
-      // 2️⃣ السيناريو الثاني: إعادة تسليم / تعديل واجب (عرض ما تم إعادته فقط)
+      var updateTypeDesc = 'إعادة إرسال وتحديث الواجب 🔄';
       if (updateType === 'image') {
-        var lines = [
-          '🔄 تنبيه: إعادة تسليم صورة الواجب 🖼️',
-          '👤 الطالب: ' + studentName,
-          '🔢 رقم الطالب/الشيت: #' + sheetNumber,
-          '📚 الموضوع: ' + (lessonTitle || 'تمرين الخط'),
-          '⚠️ النوع: تم تحديث صورة الواجب فقط'
-        ];
-        teacherMsg = lines.join(nl);
-        photoToSend = imageUrl;
+        updateTypeDesc = 'تحديث صورة الواجب فقط 🖼️';
         if (imageUrl) actionButtons.push({ text: '🖼️ فتح الصورة المحدثة', url: imageUrl });
       } else if (updateType === 'sound') {
-        var lines = [
-          '🔄 تنبيه: إعادة تسليم تسجيل صوتي 🎙️',
-          '👤 الطالب: ' + studentName,
-          '🔢 رقم الطالب/الشيت: #' + sheetNumber,
-          '📚 الموضوع: ' + (lessonTitle || 'تمرين الخط'),
-          '⚠️ النوع: تم تحديث التسجيل الصوتي فقط'
-        ];
-        teacherMsg = lines.join(nl);
+        updateTypeDesc = 'تحديث التسجيل الصوتي فقط 🎙️';
         if (soundUrl) actionButtons.push({ text: '🎙️ تشغيل الصوت المحدث', url: soundUrl });
       } else {
-        var lines = [
-          '🔄 تنبيه: إعادة تسليم واجب (مراجعة مطلوبة)',
-          '👤 الطالب: ' + studentName,
-          '🔢 رقم الطالب/الشيت: #' + sheetNumber,
-          '📚 الموضوع: ' + (lessonTitle || 'تمرين الخط'),
-          '⚠️ النوع: إعادة إرسال بيانات محدثة',
-          '📊 النتيجة الكلية: ' + (totalScore ? (totalScore.toString().indexOf('%') !== -1 ? totalScore : (totalScore + '%')) : 'قيد الاحتساب')
-        ];
-        teacherMsg = lines.join(nl);
-        photoToSend = imageUrl;
+        updateTypeDesc = 'تحديث بيانات وملفات الواجب 📦';
         if (imageUrl) actionButtons.push({ text: '🖼️ الصورة المحدثة', url: imageUrl });
         if (soundUrl) actionButtons.push({ text: '🎙️ الصوت المحدث', url: soundUrl });
       }
+
+      var defaultResubmitTeacherTmpl = '🔄 تنبيه: إعادة تسليم واجب\\n👤 الطالب: {student}\\n🔢 رقم الطالب/الشيت: #{sheet}\\n📚 الموضوع: {lesson}\\n⚠️ نوع التحديث: {type}\\n📊 النتيجة الكلية: {score}';
+      var resubmitTmpl = getTelegramTemplateText('resubmit_homework_teacher', 'ar', defaultResubmitTeacherTmpl);
+      teacherMsg = renderTemplate(resubmitTmpl, {
+        student: studentName,
+        sheet: sheetNumber,
+        lesson: lessonTitle || 'تمرين الخط',
+        score: formattedScore,
+        type: updateTypeDesc
+      });
     } else {
-      // 1️⃣ السيناريو الأول: تسليم جديد لأول مرة (عرض الصورة مباشرة + أزرار)
-      var lines = [
-        '📝 تسليم واجب جديد',
-        '👤 الطالب: ' + studentName,
-        '🔢 رقم الطالب/الشيت: #' + sheetNumber,
-        '📚 الموضوع: ' + (lessonTitle || 'تمرين الخط'),
-        '📊 النتيجة الكلية: ' + (totalScore ? (totalScore.toString().indexOf('%') !== -1 ? totalScore : (totalScore + '%')) : 'قيد الاحتساب')
-      ];
-      teacherMsg = lines.join(nl);
-      photoToSend = imageUrl;
       if (imageUrl) actionButtons.push({ text: '🖼️ فتح الصورة', url: imageUrl });
       if (soundUrl) actionButtons.push({ text: '🎙️ تشغيل الصوت', url: soundUrl });
+
+      var defaultNewTeacherTmpl = '📝 تسليم واجب جديد\\n👤 الطالب: {student}\\n🔢 رقم الطالب/الشيت: #{sheet}\\n📚 الموضوع: {lesson}\\n📊 النتيجة الكلية: {score}';
+      var newTmpl = getTelegramTemplateText('new_homework_teacher', 'ar', defaultNewTeacherTmpl);
+      teacherMsg = renderTemplate(newTmpl, {
+        student: studentName,
+        sheet: sheetNumber,
+        lesson: lessonTitle || 'تمرين الخط',
+        score: formattedScore
+      });
     }
 
     var teacherTargetId = config.teacherChatId || (typeof DEFAULT_TEACHER_CHAT_ID !== 'undefined' ? DEFAULT_TEACHER_CHAT_ID : '');
@@ -2322,55 +2512,65 @@ function notifyOnHomeworkSubmission(sheet, rowNum, isResubmission, updateType) {
       logTelegramEvent(teacherMsg, config.groupChatId, sheetNumber, studentName, (gRes && gRes.success) ? 'تم إرسال إشعار القروب بنجاح ✅' : ('فشل إرسال القروب: ' + (gRes.message || '')));
     }
 
-    // 2) إرسال رسالة التلغرام التلقائية للطالب عند اكتمال الواجب (بناءً على لغته)
-    if (sheetNumber) {
+    // 2) إرسال رسالة التلغرام التلقائية للطالب عند اكتمال الواجب (بناءً على لغته وقالب homework_received)
+    if (sheetNumber || studentName) {
       var users = getTelegramUsers();
       var studentBinding = null;
       for (var k in users) {
-        if (users[k] && users[k].sheetNumber && users[k].sheetNumber.toString().trim() === sheetNumber.toString().trim()) {
+        if (users[k] && users[k].sheetNumber && String(users[k].sheetNumber).trim() === String(sheetNumber).trim()) {
           studentBinding = users[k];
           break;
         }
       }
+      if (!studentBinding && studentName) {
+        for (var k2 in users) {
+          if (users[k2] && users[k2].studentName && String(users[k2].studentName).trim().toLowerCase() === String(studentName).trim().toLowerCase()) {
+            studentBinding = users[k2];
+            break;
+          }
+        }
+      }
 
       if (studentBinding && studentBinding.chatId) {
-        var lang = studentBinding.language || 'ar';
-        var studentMsg = '';
+        var studentLang = normalizeLanguage(studentBinding.language || studentBinding.rawLanguage || 'ar');
+        var defaultStudentMsgAr = '✅ تم استلام واجبك بنجاح يا {student}!\\n📚 الدرس: {lesson}\\nتم إرسال إجاباتك وملفاتك إلى الأستاذ، وسيصلك إشعار التصحيح فور اعتماده 🌸';
+        var defaultStudentMsgTh = '✅ ได้รับการบ้านเรียบร้อยแล้ว คุณ {student}!\\n📚 บทเรียน: {lesson}\\nส่งคำตอบและไฟล์ไปยังอาจารย์แล้ว และจะแจ้งผลการตรวจทันทีที่เสร็จสิ้น 🌸';
+        var defaultStudentMsgEn = '✅ Your homework for: 📚 {lesson} has been received, {student}!\\nYour answers and files have been sent to the teacher. You will be notified once reviewed 🌸';
 
-        if (isResubmission) {
-          if (lang === 'th') {
-            studentMsg = [
-              '🔄 ได้รับการส่งการบ้านใหม่เรียบร้อยแล้ว คุณ ' + studentName + '!',
-              '📚 บทเรียน: ' + (lessonTitle || 'แบบฝึกหัด'),
-              'อาจารย์ได้รับข้อมูลที่อัปเดตแล้ว กำลังรอการตรวจ 🌸'
-            ].join(nl);
-          } else {
-            studentMsg = [
-              '🔄 تم استلام التعديل وإعادة الإرسال بنجاح يا ' + studentName + '!',
-              '📚 الدرس: ' + (lessonTitle || 'تمرين الخط'),
-              'تم تحديث بيانات واجبك لدى الأستاذ، جاري المراجعة والتصحيح 🌸'
-            ].join(nl);
-          }
-        } else {
-          if (lang === 'th') {
-            studentMsg = [
-              '✅ ได้รับการบ้านเรียบร้อยแล้ว คุณ ' + studentName + '!',
-              '📚 บทเรียน: ' + (lessonTitle || 'แบบฝึกหัด'),
-              'ส่งคำตอบและไฟล์ไปยังอาจารย์แล้ว และจะแจ้งผลการตรวจทันทีที่เสร็จสิ้น 🌸'
-            ].join(nl);
-          } else {
-            studentMsg = [
-              '✅ تم استلام واجبك بنجاح يا ' + studentName + '!',
-              '📚 الدرس: ' + (lessonTitle || 'تمرين الخط'),
-              'تم إرسال إجاباتك وملفاتك إلى الأستاذ، وسيصلك إشعار التصحيح فور اعتماده 🌸'
-            ].join(nl);
+        var defaultStudentMsg = studentLang === 'th' ? defaultStudentMsgTh : (studentLang === 'en' ? defaultStudentMsgEn : defaultStudentMsgAr);
+        var tmplInfo = getTelegramTemplateInfo('homework_received', studentLang, defaultStudentMsg, '', '');
+        var studentMsg = renderTemplate(tmplInfo.text, {
+          student: studentName,
+          lesson: lessonTitle || 'تمرين الخط',
+          sheet: sheetNumber,
+          score: formattedScore
+        });
+
+        var studentButtons = [];
+        if (tmplInfo.buttonUrl) {
+          var renderedBtnUrl = renderTemplate(tmplInfo.buttonUrl, {
+            student: studentName,
+            lesson: lessonTitle || '',
+            sheet: sheetNumber,
+            score: formattedScore
+          });
+          var defaultBtnLbl = studentLang === 'th' ? '🔗 เปิดลิงก์' : (studentLang === 'en' ? '🔗 Open Link' : '🔗 فتح الرابط');
+          var renderedBtnText = renderTemplate(tmplInfo.buttonText || defaultBtnLbl, {
+            student: studentName,
+            lesson: lessonTitle || '',
+            sheet: sheetNumber,
+            score: formattedScore
+          });
+          if (renderedBtnUrl && renderedBtnUrl.toString().trim()) {
+            studentButtons.push({ text: renderedBtnText, url: renderedBtnUrl.toString().trim() });
           }
         }
 
         var sRes = sendTelegramNotification({
           botToken: botToken,
           chatId: studentBinding.chatId,
-          text: studentMsg
+          text: studentMsg,
+          buttons: studentButtons.length > 0 ? studentButtons : null
         });
         logTelegramEvent(studentMsg, studentBinding.chatId, sheetNumber, studentName, (sRes && sRes.success) ? 'تم إرسال تأكيد الاستلام للطالب بنجاح ✅' : ('فشل إرسال تأكيد الطالب: ' + (sRes.message || '')));
       }
@@ -2394,24 +2594,28 @@ function getAllSettingsStudents() {
 
     for (var r = 1; r < data.length; r++) {
       // 1) قراءة العمود B (رقم الطالب، index 1) والعمود C (اسم الطالب، index 2)
-      var sNumB = data[r][1] ? data[r][1].toString().trim() : '';
-      var userC = data[r][2] ? data[r][2].toString().trim() : '';
-      if (userC && sNumB) {
-        var key = (userC + '__' + sNumB).toLowerCase();
+      var sNumB = (data[r][1] !== undefined && data[r][1] !== null) ? data[r][1].toString().trim() : '';
+      var userC = (data[r][2] !== undefined && data[r][2] !== null) ? data[r][2].toString().trim() : '';
+      if (userC || sNumB) {
+        var studentName = userC || ('طالب رقم ' + sNumB);
+        var studentSheet = sNumB || String(r);
+        var key = (studentName + '__' + studentSheet).toLowerCase();
         if (!seen[key]) {
           seen[key] = true;
-          list.push({ name: userC, sheet: sNumB });
+          list.push({ name: studentName, sheet: studentSheet });
         }
       }
 
       // 2) فحص إضافي للأعمدة Z و AA
-      var userZ = data[r][25] ? data[r][25].toString().trim() : '';
-      var sNumAA = data[r][26] ? data[r][26].toString().trim() : '';
-      if (userZ && sNumAA) {
-        var keyZ = (userZ + '__' + sNumAA).toLowerCase();
+      var userZ = (data[r][25] !== undefined && data[r][25] !== null) ? data[r][25].toString().trim() : '';
+      var sNumAA = (data[r][26] !== undefined && data[r][26] !== null) ? data[r][26].toString().trim() : '';
+      if (userZ || sNumAA) {
+        var studentNameZ = userZ || ('طالب رقم ' + sNumAA);
+        var studentSheetAA = sNumAA || String(r);
+        var keyZ = (studentNameZ + '__' + studentSheetAA).toLowerCase();
         if (!seen[keyZ]) {
           seen[keyZ] = true;
-          list.push({ name: userZ, sheet: sNumAA });
+          list.push({ name: studentNameZ, sheet: studentSheetAA });
         }
       }
     }
@@ -2421,36 +2625,7 @@ function getAllSettingsStudents() {
   }
 }
 
-// ------------------- معالج رسائل وأوامر Webhook من Telegram تلقائياً -------------------
-
-function findStudentNameBySheetNumber(sheetNumber) {
-  try {
-    var ss = getSpreadsheet();
-    if (!ss) return '';
-    var settingsSheet = ss.getSheetByName('Settings');
-    if (settingsSheet) {
-      var data = settingsSheet.getDataRange().getValues();
-      for (var r = 1; r < data.length; r++) {
-        // 1) الفحص الأساسي المعتمد: العمود B (رقم الطالب/الشيت، index 1) والعمود C (اسم الطالب، index 2)
-        var sNumB = data[r][1] ? data[r][1].toString().trim() : '';
-        var userC = data[r][2] ? data[r][2].toString().trim() : '';
-        if (sNumB === sheetNumber.toString().trim() && userC) {
-          return userC;
-        }
-
-        // 2) فحص احتياطي إضافي: في حال كان مسجلاً في العمود Z (25) و AA (26)
-        var userZ = data[r][25] ? data[r][25].toString().trim() : '';
-        var sNumAA = data[r][26] ? data[r][26].toString().trim() : '';
-        if (sNumAA === sheetNumber.toString().trim() && userZ) {
-          return userZ;
-        }
-      }
-    }
-    return '';
-  } catch (err) {
-    return '';
-  }
-}
+// ------------------- معالج Webhook المخصص للإشعارات واللغات فقط (بدون تسجيل آلي في التيليجرام) -------------------
 
 function handleTelegramWebhookUpdate(update) {
   try {
@@ -2463,264 +2638,51 @@ function handleTelegramWebhookUpdate(update) {
     }
     if (!chatId) return;
 
-    // --- منع تكرار المعالجة إذا أعاد Telegram إرسال نفس التحديث (Idempotency Cache) ---
+    // منع تكرار المعالجة إذا أعاد Telegram إرسال نفس التحديث (Idempotency Cache)
     var updateId = update.update_id ? String(update.update_id) : (msg.message_id ? String(msg.message_id) : '');
     if (updateId) {
       var cache = CacheService.getScriptCache();
       var cacheKey = 'tg_upd_' + updateId;
       if (cache && cache.get(cacheKey)) {
-        return; // تم معالجة هذا التحديث مسبقاً بنجاح، نتجاهله لمنع التكرار
+        return;
       }
-      if (cache) cache.put(cacheKey, '1', 600); // حفظ المعرف لمدة 10 دقائق
-    }
-
-    var rawText = msg.text ? msg.text.toString().trim() : '';
-    if (update.callback_query && update.callback_query.data) {
-      rawText = update.callback_query.data.toString().trim();
+      if (cache) cache.put(cacheKey, '1', 600);
     }
 
     var config = getTelegramConfig();
     var botToken = config.botToken || (typeof DEFAULT_BOT_TOKEN !== 'undefined' ? DEFAULT_BOT_TOKEN : '');
     if (!botToken) return;
 
-    var studentName = '';
-    var sheetNumber = '';
-    var lang = 'ar';
+    // في حال النقر على أزرار التفاعل (Callback Query) يتم الرد السريع لإغلاق دائرة التحميل
+    if (update.callback_query && update.callback_query.id) {
+      var cbData = (update.callback_query.data || '').toString().trim();
+      
+      // إذا كان النقر لتغيير لغة الإشعارات لطالب مسجل مسبقاً
+      if (cbData.indexOf('setlang_') === 0) {
+        var selectedLang = cbData.replace('setlang_', '').toLowerCase();
+        if (selectedLang !== 'ar' && selectedLang !== 'th' && selectedLang !== 'en') selectedLang = 'ar';
 
-    // 1) فحص إذا كان الأمر طلب تغيير اللغة (/lang أو /language أو زر تغيير اللغة)
-    if (rawText === '/lang' || rawText === '/language' || rawText === 'lang' || rawText === 'اللغة' || rawText === 'ภาษา') {
-      var langPrompt = [
-        '🌐 يرجى اختيار لغة الإشعارات المفضلة لديك:',
-        'Please choose your preferred notification language:',
-        'กรุณาเลือกภาษาสำหรับการแจ้งเตือน:'
-      ].join(nl);
-
-      var langKeyboard = {
-        inline_keyboard: [
-          [
-            { text: '🇸🇦 العربية', callback_data: 'setlang_ar' },
-            { text: '🇹🇭 ภาษาไทย', callback_data: 'setlang_th' },
-            { text: '🇬🇧 English', callback_data: 'setlang_en' }
-          ]
-        ]
-      };
-
-      UrlFetchApp.fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
-        method: 'post',
-        contentType: 'application/json',
-        payload: JSON.stringify({
-          chat_id: chatId,
-          text: langPrompt,
-          reply_markup: langKeyboard
-        }),
-        muteHttpExceptions: true
-      });
-
-      if (update.callback_query && update.callback_query.id) {
-        UrlFetchApp.fetch('https://api.telegram.org/bot' + botToken + '/answerCallbackQuery', {
-          method: 'post',
-          contentType: 'application/json',
-          payload: JSON.stringify({ callback_query_id: update.callback_query.id }),
-          muteHttpExceptions: true
-        });
-      }
-      return;
-    }
-
-    // 2) فحص النقر على زر اختيار اللغة (setlang_ar, setlang_th, setlang_en)
-    if (rawText.indexOf('setlang_') === 0) {
-      var selectedLang = rawText.replace('setlang_', '').toLowerCase();
-      if (selectedLang !== 'ar' && selectedLang !== 'th' && selectedLang !== 'en') selectedLang = 'ar';
-
-      // تحديث لغة الطالب في شيت Telegram_Users
-      var usersSheet = getTelegramSheet('Telegram_Users');
-      if (usersSheet) {
-        var uData = usersSheet.getDataRange().getValues();
-        for (var i = 1; i < uData.length; i++) {
-          if (uData[i][2] && uData[i][2].toString().trim() === String(chatId).trim()) {
-            usersSheet.getRange(i + 1, 4).setValue(selectedLang);
-            usersSheet.getRange(i + 1, 5).setValue(new Date());
+        var usersSheet = getTelegramSheet('Telegram_Users');
+        if (usersSheet) {
+          var uData = usersSheet.getDataRange().getValues();
+          for (var i = 1; i < uData.length; i++) {
+            if (uData[i][2] && uData[i][2].toString().trim() === String(chatId).trim()) {
+              usersSheet.getRange(i + 1, 4).setValue(selectedLang);
+            }
           }
         }
       }
 
-      var confirmMsg = '';
-      if (selectedLang === 'th') {
-        confirmMsg = '✅ ตั้งค่าภาษาการแจ้งเตือนเป็นภาษาไทยเรียบร้อยแล้ว!';
-      } else if (selectedLang === 'en') {
-        confirmMsg = '✅ Notification language has been set to English successfully!';
-      } else {
-        confirmMsg = '✅ تم ضبط لغة الإشعارات إلى اللغة العربية بنجاح!';
-      }
-
-      UrlFetchApp.fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
+      UrlFetchApp.fetch('https://api.telegram.org/bot' + botToken + '/answerCallbackQuery', {
         method: 'post',
         contentType: 'application/json',
-        payload: JSON.stringify({
-          chat_id: chatId,
-          text: confirmMsg
-        }),
+        payload: JSON.stringify({ callback_query_id: update.callback_query.id }),
         muteHttpExceptions: true
       });
-
-      if (update.callback_query && update.callback_query.id) {
-        UrlFetchApp.fetch('https://api.telegram.org/bot' + botToken + '/answerCallbackQuery', {
-          method: 'post',
-          contentType: 'application/json',
-          payload: JSON.stringify({
-            callback_query_id: update.callback_query.id,
-            text: confirmMsg,
-            show_alert: false
-          }),
-          muteHttpExceptions: true
-        });
-      }
-
-      logTelegramEvent('تغيير لغة إلى: ' + selectedLang, chatId, '', '', confirmMsg);
-      return;
-    }
-
-    // 3) فحص إذا كان الأمر /start مع بارامتر (Deep Link)
-    if (rawText.indexOf('/start') === 0) {
-      var parts = rawText.split(' ');
-      var payloadStr = parts.length > 1 ? parts[1].trim() : '';
-
-      if (payloadStr) {
-        // نمط S222_ar أو S222 أو 222_ar أو 222
-        var sMatch = payloadStr.match(/^S?([0-9a-zA-Z]+)(?:_([a-zA-Z]+))?$/i);
-        if (sMatch) {
-          sheetNumber = sMatch[1];
-          if (sMatch[2]) lang = sMatch[2].toLowerCase();
-        } else if (payloadStr.indexOf('STU_') === 0) {
-          var rawData = payloadStr.substring(4);
-          var subParts = rawData.split('_');
-          if (subParts.length > 0) studentName = decodeURIComponent(subParts[0].replace(/_/g, ' ')).trim();
-          for (var p = 1; p < subParts.length; p++) {
-            if (subParts[p].indexOf('S') === 0) sheetNumber = subParts[p].substring(1);
-            else if (subParts[p].indexOf('L') === 0) lang = subParts[p].substring(1);
-          }
-        }
-      }
-    } else {
-      // 4) إذا كتب الطالب رقم الشيت مباشرة في الرسالة (مثال: 222 أو شيت 222 أو S222)
-      var numMatch = rawText.match(/[0-9]+/);
-      if (numMatch) {
-        sheetNumber = numMatch[0];
-      }
-    }
-
-    // فحص منع تكرار إرسال نفس رسالة الترحيب لنفس المستخدم في فترة قصيرة
-    if (sheetNumber) {
-      var userCacheKey = 'tg_welcomed_' + chatId + '_' + sheetNumber;
-      var uCache = CacheService.getScriptCache();
-      if (uCache && uCache.get(userCacheKey)) {
-        return; // تم الترحيب بالطالب بالفعل في آخر 10 دقائق
-      }
-      if (uCache) uCache.put(userCacheKey, '1', 600);
-    }
-
-    // تسجيل الحدث في شيت Telegram_Logs لتسهيل التتبع والتشخيص
-    logTelegramEvent(rawText, chatId, sheetNumber, studentName, 'جاري المعالجة');
-
-    // إذا تم استخراج رقم الشيت، نقوم بالربط والترحيب
-    if (sheetNumber) {
-      if (!studentName) {
-        studentName = findStudentNameBySheetNumber(sheetNumber);
-        if (!studentName) {
-          var tgName = msg.from ? ((msg.from.first_name || '') + ' ' + (msg.from.last_name || '')).trim() : '';
-          studentName = tgName || ('طالب شيت #' + sheetNumber);
-        }
-      }
-
-      // حفظ الطالب فوراً في شيت Telegram_Users تلقائياً
-      bindTelegramUser({
-        studentName: studentName,
-        sheetNumber: sheetNumber,
-        chatId: String(chatId),
-        language: lang
-      });
-
-      // إرسال رسالة ترحيبية وتطمين للطالب
-      var nl = String.fromCharCode(10);
-      var confirmMsg = '';
-      if (lang === 'th') {
-        confirmMsg = [
-          '✅ เชื่อมต่อบัญชีสำเร็จแล้ว คุณ ' + studentName + '!',
-          '📌 หมายเลขแผ่นงาน: #' + sheetNumber,
-          '',
-          '🔒 ความเป็นส่วนตัวและความปลอดภัย:',
-          'บัญชีนี้ปลอดภัยและจะใช้เพื่อรับการแจ้งเตือนผลการตรวจการบ้าน คะแนน และคำแนะนำของอาจารย์เท่านั้น',
-          '',
-          'ขอให้โชคดีและประสบความสำเร็จในการเรียนครับ 🌟'
-        ].join(nl);
-      } else {
-        confirmMsg = [
-          '✅ تم ربط حسابك بنجاح يا ' + studentName + '!',
-          '📌 تم التثبيت برقم الشيت: (#' + sheetNumber + ')',
-          '',
-          '🔒 تأكيد الأمان والخصوصية:',
-          'هذا البوت آمن ومخصص فقط لإرسال:',
-          '✔️ نتائج تصحيح الواجبات والملاحظات الصوتية والمكتوبة',
-          '✔️ الدرجات والتقييمات فور رصدها',
-          '✔️ تنبيهات طلبات إعادة التدريب إن وجدت',
-          '',
-          'نتمنى لك دوام التوفيق والتميز دائماً 🌟'
-        ].join(nl);
-      }
-
-      sendTelegramNotification({
-        botToken: botToken,
-        chatId: chatId,
-        text: confirmMsg
-      });
-
-      logTelegramEvent(rawText, chatId, sheetNumber, studentName, 'تم الربط وإرسال التأكيد بنجاح ✅');
-
-      // إشعار الأستاذ بالاشتراك الجديد إن كان مفعلاً
-      if (config.teacherChatId && String(config.teacherChatId) !== String(chatId)) {
-        sendTelegramNotification({
-          botToken: botToken,
-          chatId: config.teacherChatId,
-          text: '👤 طالب جديد ربط حسابه بالتليجرام: ' + studentName + ' (شيت #' + sheetNumber + ')'
-        });
-      }
-    } else {
-      // 3) إذا ضغط الطالب Start بدون رقم أو أرسل رسالة ترحيبية عادية
-      // منع التكرار: لا نرسل رسالة الترحيب العامة لنفس المستخدم أكثر من مرة واحدة كل 6 ساعات
-      var genCacheKey = 'tg_gen_welcome_' + chatId;
-      var gCache = CacheService.getScriptCache();
-      if (gCache && gCache.get(genCacheKey)) {
-        return; // تم إرسال رسالة الترحيب لهذا المحادثة مسبقاً، تجاهل تكرار خادم تلغرام
-      }
-      if (gCache) gCache.put(genCacheKey, '1', 21600); // منع التكرار لمدة 6 ساعات
-
-      var nl2 = String.fromCharCode(10);
-      var welcomeHelpMsg = [
-        '✨ مرحباً بك في بوت منصة تصحيح الخط العربي ✒️',
-        '',
-        '🔒 رسالة خصوصية وأمان:',
-        'هذا البوت مخصص حصرياً لإرسال إشعارات ونتائج تصحيح واجباتك ودرجاتك وملاحظات الأستاذ التوجيهية بكل أمان وسرية، ولا يتم مشاركة أي معلومات شخصية.',
-        '',
-        '📝 لتفعيل استلام نتائجك فوراً:',
-        'أرسل فقط رقم الشيت الخاص بك في رسالة هنا (مثال: 222 أو 15).',
-        '',
-        '--------------------',
-        '🔒 ความเป็นส่วนตัวและความปลอดภัย:',
-        'บอทนี้ใช้สำหรับส่งผลการตรวจการบ้านและคะแนนเท่านั้น ปลอดภัย 100%',
-        'กรุณาส่ง หมายเลขแผ่นงาน ของคุณ (เช่น: 222) เพื่อเริ่มรับการแจ้งเตือน'
-      ].join(nl2);
-
-      sendTelegramNotification({
-        botToken: botToken,
-        chatId: chatId,
-        text: welcomeHelpMsg
-      });
-
-      logTelegramEvent(rawText, chatId, '', '', 'تم إرسال رسالة طلب رقم الشيت ℹ️');
     }
   } catch (err) {
     try {
-      logTelegramEvent('خطأ أثناء المعالجة', '', '', '', 'السبب: ' + err.message);
+      logTelegramEvent('خطأ أثناء استقبال التحديث', '', '', '', 'السبب: ' + err.message);
     } catch(e) {}
   }
 }

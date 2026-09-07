@@ -6,7 +6,8 @@ import {
   Mic, Image as ImageIcon, ShieldCheck, Lock,
   Trash2, ChevronDown, ChevronUp, Link as LinkIcon, Settings as SettingsIcon,
   HelpCircle, MessageSquare, Calendar, Clock, Eye, EyeOff,
-  UserCheck, Users, UserPlus, User, ChevronLeft, Edit3, Sparkles, Globe, Send, Bot
+  UserCheck, Users, UserPlus, User, ChevronLeft, Edit3, Sparkles, Globe, Send, Bot,
+  FileSpreadsheet
 } from 'lucide-react';
 import { AdminQuestionRow, AdminAnswerRow, AdminQuestionItem } from '../types';
 import TranslationEditor from './TranslationEditor';
@@ -15,7 +16,9 @@ import {
   fetchAdminQuestions, saveAdminQuestion, deleteAdminQuestion, fetchAdminAnswers, 
   updateAdminAnswer, saveBatchAdminQuestions,
   getStudentCustomSchedulesMap, saveStudentCustomSchedule, deleteStudentCustomSchedule,
-  StudentCustomScheduleData, sanitizeQuestions, sanitizeLessonQuestions
+  getGeneralAutoScheduleConfig, saveGeneralAutoScheduleConfig,
+  StudentCustomScheduleData, sanitizeQuestions, sanitizeLessonQuestions,
+  fetchSettingsStudentsFromSheet
 } from '../api';
 
 interface AdminPanelProps {
@@ -35,28 +38,69 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [expandedAudioIndex, setExpandedAudioIndex] = useState<number | null>(0);
   const [savingQuestion, setSavingQuestion] = useState(false);
 
+  // Answers state
+  const [answers, setAnswers] = useState<AdminAnswerRow[]>([]);
+  const [loadingAnswers, setLoadingAnswers] = useState(false);
+  const [answerSearch, setAnswerSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'pending'>('all');
+  const [editingAnswer, setEditingAnswer] = useState<AdminAnswerRow | null>(null);
+  const [savingAnswer, setSavingAnswer] = useState(false);
+
+  // Global notice state
+  const [notice, setNotice] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Delete modal state
+  const [deletingQuestionRow, setDeletingQuestionRow] = useState<AdminQuestionRow | null>(null);
+
   // Auto Schedule Generator state
+  const savedGeneralConfig = getGeneralAutoScheduleConfig();
   const [showAutoScheduleModal, setShowAutoScheduleModal] = useState(false);
   const [confirmingClear, setConfirmingClear] = useState(false);
-  const [selectedDays, setSelectedDays] = useState<number[]>([1, 3, 5]); // Default Mon, Wed, Fri (1, 3, 5)
+  const [selectedDays, setSelectedDays] = useState<number[]>(() => {
+    return savedGeneralConfig?.selectedDays || [1, 3, 5];
+  });
   const [autoStartDate, setAutoStartDate] = useState<string>(() => {
+    if (savedGeneralConfig?.autoStartDate) return savedGeneralConfig.autoStartDate;
     const d = new Date();
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day} 08:00`;
   });
-  const [lessonsPerDay, setLessonsPerDay] = useState<number>(2);
-  const [autoHideMode, setAutoHideMode] = useState<'days' | 'unifiedDate' | 'none'>('days');
-  const [autoExpireAfterDays, setAutoExpireAfterDays] = useState<number | string>(4);
-  const [autoUnifiedEndDate, setAutoUnifiedEndDate] = useState<string>('');
+  const [lessonsPerDay, setLessonsPerDay] = useState<number>(() => {
+    return savedGeneralConfig?.lessonsPerDay !== undefined ? savedGeneralConfig.lessonsPerDay : 2;
+  });
+  const [autoHideMode, setAutoHideMode] = useState<'days' | 'unifiedDate' | 'none'>(() => {
+    return savedGeneralConfig?.autoHideMode || 'days';
+  });
+  const [autoExpireAfterDays, setAutoExpireAfterDays] = useState<number | string>(() => {
+    return savedGeneralConfig?.autoExpireAfterDays !== undefined ? savedGeneralConfig.autoExpireAfterDays : 4;
+  });
+  const [autoUnifiedEndDate, setAutoUnifiedEndDate] = useState<string>(() => {
+    return savedGeneralConfig?.autoUnifiedEndDate || '';
+  });
   const [applyingAutoSchedule, setApplyingAutoSchedule] = useState(false);
 
   // Student Custom Schedule Generator State
   const [showStudentCustomScheduleModal, setShowStudentCustomScheduleModal] = useState(false);
   const [selectedStudentForSchedule, setSelectedStudentForSchedule] = useState<string | null>(null);
+  const [selectedStudentSheetForSchedule, setSelectedStudentSheetForSchedule] = useState<string>('');
   const [studentScheduleSearch, setStudentScheduleSearch] = useState('');
   const [manualStudentInput, setManualStudentInput] = useState('');
+  const [manualStudentSheetInput, setManualStudentSheetInput] = useState('');
+  const [settingsStudents, setSettingsStudents] = useState<Array<{ name: string; sheet: string }>>(() => {
+    try {
+      const cached = localStorage.getItem('cached_settings_students');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [loadingSettingsStudents, setLoadingSettingsStudents] = useState(false);
   const [studentSelectedDays, setStudentSelectedDays] = useState<number[]>([1, 3, 5]);
   const [studentStartDate, setStudentStartDate] = useState<string>(() => {
     const d = new Date();
@@ -75,11 +119,93 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     setCustomSchedulesMap(getStudentCustomSchedulesMap());
   };
 
-  const handleSelectStudentForSchedule = (username: string) => {
+  const loadSettingsStudentsList = async () => {
+    setLoadingSettingsStudents(true);
+    try {
+      const res = await fetchSettingsStudentsFromSheet();
+      if (res.success && res.students && res.students.length > 0) {
+        setSettingsStudents(res.students);
+      }
+    } catch (err) {
+      console.error('Error loading settings students:', err);
+    } finally {
+      setLoadingSettingsStudents(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showStudentCustomScheduleModal) {
+      loadSettingsStudentsList();
+    }
+  }, [showStudentCustomScheduleModal]);
+
+  // Combine all students prioritizing Settings sheet (Column B: رقم الطالب, Column C: اسم الطالب)
+  const allKnownStudents = (() => {
+    const map = new Map<string, { name: string; sheet: string }>();
+
+    // 1) Primary and authoritative source: Settings Sheet (Column B: رقم الطالب, Column C: اسم الطالب)
+    if (Array.isArray(settingsStudents)) {
+      settingsStudents.forEach(st => {
+        if (!st) return;
+        const name = (st.name || '').trim();
+        const sheet = (st.sheet || '').trim();
+        if (name || sheet) {
+          const key = `${name.toLowerCase()}__${sheet.toLowerCase()}`;
+          map.set(key, { name: name || `طالب (${sheet})`, sheet });
+        }
+      });
+    }
+
+    // 2) Existing custom schedules
+    if (customSchedulesMap && typeof customSchedulesMap === 'object') {
+      Object.keys(customSchedulesMap).forEach(k => {
+        const c = customSchedulesMap[k];
+        if (c && (c.username || c.sheetNumber)) {
+          const name = (c.username || '').trim();
+          const sheet = (c.sheetNumber || '').trim();
+          const key = `${name.toLowerCase()}__${sheet.toLowerCase()}`;
+          if (!map.has(key)) {
+            map.set(key, { name: name || `طالب (${sheet})`, sheet });
+          }
+        }
+      });
+    }
+
+    // 3) Answers (if any not already in settings)
+    if (Array.isArray(answers)) {
+      answers.forEach(a => {
+        if (!a) return;
+        const name = (a.username || '').trim();
+        const sheet = (a.sheetNumber || '').trim();
+        if (name || sheet) {
+          const key = `${name.toLowerCase()}__${sheet.toLowerCase()}`;
+          if (!map.has(key)) {
+            map.set(key, { name: name || `طالب (${sheet})`, sheet });
+          }
+        }
+      });
+    }
+
+    return Array.from(map.values());
+  })();
+
+  const handleSelectStudentForSchedule = (username: string, sheetNum?: string) => {
     const cleanName = username.trim();
-    if (!cleanName) return;
-    setSelectedStudentForSchedule(cleanName);
-    const existing = customSchedulesMap[cleanName.toLowerCase()];
+    let cleanSheet = sheetNum ? sheetNum.trim() : '';
+    if (!cleanName && !cleanSheet) return;
+
+    if (!cleanSheet) {
+      const found = allKnownStudents.find(s => s.name.trim().toLowerCase() === cleanName.toLowerCase());
+      if (found) cleanSheet = found.sheet.trim();
+    }
+
+    const displayName = cleanName || `طالب رقم ${cleanSheet}`;
+    setSelectedStudentForSchedule(displayName);
+    setSelectedStudentSheetForSchedule(cleanSheet);
+
+    const existing = (cleanName ? customSchedulesMap[cleanName.toLowerCase()] : undefined) ||
+                     (cleanSheet ? customSchedulesMap[cleanSheet.toLowerCase()] : undefined);
+
     if (existing && existing.config) {
       setStudentSelectedDays(existing.config.selectedDays || [1, 3, 5]);
       setStudentStartDate(existing.config.startDate || autoStartDate);
@@ -177,6 +303,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
 
     const data: StudentCustomScheduleData = {
       username: selectedStudentForSchedule,
+      sheetNumber: selectedStudentSheetForSchedule,
       updatedAt: new Date().toISOString(),
       config: {
         selectedDays: studentSelectedDays,
@@ -192,14 +319,15 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     saveStudentCustomSchedule(selectedStudentForSchedule, data);
     refreshCustomSchedulesMap();
     setNotice({
-      text: `تم حفظ وتفعيل الجدول الخاص للطالب (${selectedStudentForSchedule}) لـ ${scheduleItems.length} درس بنجاح! ⚡`,
+      text: `تم حفظ وتفعيل الجدول الخاص للطالب (${selectedStudentForSchedule}${selectedStudentSheetForSchedule ? ` - رقم ${selectedStudentSheetForSchedule}` : ''}) لـ ${scheduleItems.length} درس بنجاح! ⚡`,
       type: 'success'
     });
     setSelectedStudentForSchedule(null);
+    setSelectedStudentSheetForSchedule('');
   };
 
-  const handleDeleteStudentCustomSchedule = (username: string) => {
-    deleteStudentCustomSchedule(username);
+  const handleDeleteStudentCustomSchedule = (username: string, sheetNum?: string) => {
+    deleteStudentCustomSchedule(username, sheetNum);
     refreshCustomSchedulesMap();
     setNotice({
       text: `تم إلغاء الجدول الخاص للطالب (${username}) وإعادته للجدول العام.`,
@@ -301,6 +429,14 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
 
     setApplyingAutoSchedule(true);
     try {
+      saveGeneralAutoScheduleConfig({
+        selectedDays,
+        autoStartDate,
+        lessonsPerDay,
+        autoHideMode,
+        autoExpireAfterDays,
+        autoUnifiedEndDate
+      });
       await saveBatchAdminQuestions(updatedList);
       setQuestions(updatedList);
       setNotice({
@@ -345,20 +481,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
       setApplyingAutoSchedule(false);
     }
   };
-
-  // Answers state
-  const [answers, setAnswers] = useState<AdminAnswerRow[]>([]);
-  const [loadingAnswers, setLoadingAnswers] = useState(false);
-  const [answerSearch, setAnswerSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'pending'>('all');
-  const [editingAnswer, setEditingAnswer] = useState<AdminAnswerRow | null>(null);
-  const [savingAnswer, setSavingAnswer] = useState(false);
-
-  // Global notice state
-  const [notice, setNotice] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
-
-  // Delete modal state
-  const [deletingQuestionRow, setDeletingQuestionRow] = useState<AdminQuestionRow | null>(null);
 
   useEffect(() => {
     loadQuestionsData();
@@ -2335,6 +2457,79 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                 {/* Body Content */}
                 <div className="flex-grow overflow-y-auto py-5 space-y-6 custom-scrollbar pr-1">
                   
+                  {/* INTERACTIVE DROPDOWN SELECTOR (FROM SETTINGS SHEET: COL B: ID, COL C: NAME) */}
+                  <div className="p-4 bg-purple-950/20 border border-purple-500/30 rounded-2xl space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <label className="text-slate-200 font-extrabold text-xs flex items-center gap-2">
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>اختيار الطالب من القائمة المنسدلة (المعتمدة من ورقة Settings: العمود B رقم الطالب | العمود C اسم الطالب):</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={loadSettingsStudentsList}
+                        disabled={loadingSettingsStudents}
+                        className="text-[11px] text-purple-300 hover:text-purple-200 bg-purple-900/40 hover:bg-purple-900/60 border border-purple-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shrink-0 self-start sm:self-auto"
+                        title="إعادة جلب وتحديث قائمة الطلاب من ورقة Settings"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${loadingSettingsStudents ? 'animate-spin text-purple-400' : ''}`} />
+                        <span>{loadingSettingsStudents ? 'جاري القراءة...' : 'تحديث من شيت Settings'}</span>
+                      </button>
+                    </div>
+
+                    <div className="relative">
+                      <select
+                        value={
+                          selectedStudentForSchedule
+                            ? `${selectedStudentForSchedule}__${selectedStudentSheetForSchedule}`
+                            : ''
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (!val) {
+                            setSelectedStudentForSchedule(null);
+                            setSelectedStudentSheetForSchedule('');
+                            return;
+                          }
+                          const [namePart, sheetPart] = val.split('__');
+                          handleSelectStudentForSchedule(namePart, sheetPart);
+                        }}
+                        className="w-full px-4 py-3 bg-slate-950 border-2 border-purple-500/50 hover:border-purple-400 focus:border-purple-400 text-slate-100 font-bold text-xs sm:text-sm rounded-xl outline-none cursor-pointer shadow-lg transition-all"
+                      >
+                        <option value="" className="bg-slate-900 text-slate-400">
+                          👇 انقر هنا لاختيار أي طالب (رقم الطالب - اسم الطالب) لفتح إعداداته الخاصة...
+                        </option>
+                        {allKnownStudents.map((st, idx) => {
+                          const keyName = st.name.toLowerCase();
+                          const keySheet = (st.sheet || '').toLowerCase();
+                          const hasCustom = !!(
+                            (keyName && customSchedulesMap[keyName]?.schedule?.length) ||
+                            (keySheet && customSchedulesMap[keySheet]?.schedule?.length)
+                          );
+
+                          return (
+                            <option
+                              key={`${st.sheet}_${st.name}_${idx}`}
+                              value={`${st.name}__${st.sheet}`}
+                              className="bg-slate-900 text-slate-200 py-1 font-sans"
+                            >
+                              {st.sheet ? `[رقم الطالب: ${st.sheet}]` : '[رقم الطالب: —]'} — {st.name} {hasCustom ? '⚡ (له جدول خاص مفعل)' : ' (جدول عام)'}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-400 px-1 pt-1 gap-2">
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>مصدر الأسماء المعتمد: ورقة <strong className="text-emerald-400">Settings</strong> (العمود B: رقم الطالب | العمود C: اسم الطالب)</span>
+                      </span>
+                      <span className="font-mono text-purple-300">
+                        عدد الطلاب المتاحين: {allKnownStudents.length} طالب
+                      </span>
+                    </div>
+                  </div>
+
                   {/* STEP 1: SELECT STUDENT IF NOT YET SELECTED */}
                   {!selectedStudentForSchedule ? (
                     <div className="space-y-5">
@@ -2343,7 +2538,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                         <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
                           <label className="text-slate-200 font-extrabold text-xs flex items-center gap-2">
                             <Users className="w-4 h-4 text-purple-400" />
-                            <span>اختر طالباً من القائمة أو أدخل اسماً جديداً:</span>
+                            <span>البحث في قائمة الطلاب أو إدخال طالب يدوياً:</span>
                           </label>
                           <div className="relative w-full sm:w-64">
                             <Search className="w-4 h-4 absolute right-3 top-2.5 text-slate-500" />
@@ -2351,38 +2546,47 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                               type="text"
                               value={studentScheduleSearch}
                               onChange={(e) => setStudentScheduleSearch(e.target.value)}
-                              placeholder="بحث باسم الطالب..."
+                              placeholder="بحث باسم أو رقم الطالب..."
                               className="w-full pr-9 pl-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 outline-none focus:border-purple-500"
                             />
                           </div>
                         </div>
 
                         {/* Manual add input */}
-                        <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
+                        <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row items-center gap-2">
                           <input
                             type="text"
                             value={manualStudentInput}
                             onChange={(e) => setManualStudentInput(e.target.value)}
-                            placeholder="أدخل اسم طالب جديد (مثال: أحمد علي)..."
-                            className="flex-grow p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 outline-none focus:border-purple-500"
+                            placeholder="اسم الطالب (العمود C)..."
+                            className="w-full sm:flex-grow p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 outline-none focus:border-purple-500"
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && manualStudentInput.trim()) {
-                                handleSelectStudentForSchedule(manualStudentInput);
+                                handleSelectStudentForSchedule(manualStudentInput, manualStudentSheetInput);
                                 setManualStudentInput('');
+                                setManualStudentSheetInput('');
                               }
                             }}
+                          />
+                          <input
+                            type="text"
+                            value={manualStudentSheetInput}
+                            onChange={(e) => setManualStudentSheetInput(e.target.value)}
+                            placeholder="رقم الطالب (العمود B - اختياري)..."
+                            className="w-full sm:w-44 p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 outline-none focus:border-purple-500 font-mono"
                           />
                           <button
                             type="button"
                             onClick={() => {
-                              if (manualStudentInput.trim()) {
-                                handleSelectStudentForSchedule(manualStudentInput);
+                              if (manualStudentInput.trim() || manualStudentSheetInput.trim()) {
+                                handleSelectStudentForSchedule(manualStudentInput, manualStudentSheetInput);
                                 setManualStudentInput('');
+                                setManualStudentSheetInput('');
                               } else {
-                                alert('يرجى كتابة اسم الطالب أولاً.');
+                                alert('يرجى كتابة اسم الطالب أو رقمه أولاً.');
                               }
                             }}
-                            className="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shrink-0 cursor-pointer shadow-md shadow-purple-600/20 transition-all active:scale-95"
+                            className="w-full sm:w-auto px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shrink-0 cursor-pointer shadow-md shadow-purple-600/20 transition-all active:scale-95"
                           >
                             <UserPlus className="w-4 h-4" />
                             <span>تخصيص جدول</span>
@@ -2392,40 +2596,47 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
 
                       {/* Students List Grid */}
                       <div className="space-y-2">
-                        <h4 className="text-xs font-bold text-slate-300 flex items-center justify-between">
-                          <span>قائمة الطلاب المسجلين بالمنظومة:</span>
-                          <span className="text-slate-500 font-mono text-[11px]">
-                            إجمالي: {Array.from(new Set([...answers.map(a => a.username?.trim()).filter(Boolean), ...Object.keys(customSchedulesMap)])).length} طالب
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                          <span className="flex items-center gap-2">
+                            <span>بطاقات الطلاب المسجلين (ورقة Settings):</span>
+                            <span className="text-slate-500 font-normal text-[11px]">(انقر على أي طالب لعرض وتخصيص إعداداته)</span>
                           </span>
-                        </h4>
+                          <span className="text-slate-400 font-mono text-[11px]">
+                            المعروض: {
+                              allKnownStudents.filter(s => {
+                                const q = studentScheduleSearch.trim().toLowerCase();
+                                if (!q) return true;
+                                return s.name.toLowerCase().includes(q) || s.sheet.toLowerCase().includes(q);
+                              }).length
+                            } / {allKnownStudents.length}
+                          </span>
+                        </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto custom-scrollbar p-1">
                           {(() => {
-                            const setNames = new Set<string>();
-                            answers.forEach(a => { if (a.username?.trim()) setNames.add(a.username.trim()); });
-                            Object.keys(customSchedulesMap).forEach(k => {
-                              if (customSchedulesMap[k]?.username) setNames.add(customSchedulesMap[k].username);
+                            const filtered = allKnownStudents.filter(s => {
+                              const q = studentScheduleSearch.trim().toLowerCase();
+                              if (!q) return true;
+                              return s.name.toLowerCase().includes(q) || s.sheet.toLowerCase().includes(q);
                             });
-                            const allNames = Array.from(setNames).filter(n => 
-                              !studentScheduleSearch.trim() || n.toLowerCase().includes(studentScheduleSearch.trim().toLowerCase())
-                            );
 
-                            if (allNames.length === 0) {
+                            if (filtered.length === 0) {
                               return (
                                 <div className="col-span-2 p-8 text-center bg-slate-950 border border-slate-800 rounded-2xl text-slate-500 text-xs">
-                                  لا يوجد طلاب مطابقون للبحث. يمكنك كتابة اسم الطالب في الخانة أعلاه والضغط على "تخصيص جدول".
+                                  لا يوجد طلاب مطابقون للبحث. يمكنك اختيار الطالب من القائمة المنسدلة أعلاه أو الضغط على "تحديث من شيت Settings".
                                 </div>
                               );
                             }
 
-                            return allNames.map((uname) => {
-                              const key = uname.toLowerCase();
-                              const existingSchedule = customSchedulesMap[key];
+                            return filtered.map((st, idx) => {
+                              const keyName = st.name.toLowerCase();
+                              const keySheet = (st.sheet || '').toLowerCase();
+                              const existingSchedule = (keyName && customSchedulesMap[keyName]) || (keySheet && customSchedulesMap[keySheet]);
                               const hasCustom = !!(existingSchedule && existingSchedule.schedule && existingSchedule.schedule.length > 0);
 
                               return (
                                 <div
-                                  key={uname}
+                                  key={`${st.sheet}_${st.name}_${idx}`}
                                   className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
                                     hasCustom
                                       ? 'bg-purple-950/20 border-purple-500/40 ring-1 ring-purple-500/20'
@@ -2437,11 +2648,18 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                                       <User className="w-4 h-4" />
                                     </div>
                                     <div className="truncate">
-                                      <div className="font-extrabold text-xs text-slate-200 truncate">{uname}</div>
-                                      <div className="mt-1">
+                                      <div className="font-extrabold text-xs text-slate-200 truncate flex items-center gap-1.5">
+                                        <span>{st.name}</span>
+                                        {st.sheet && (
+                                          <span className="px-1.5 py-0.2 bg-slate-800 text-emerald-400 border border-slate-700 font-mono text-[10px] rounded">
+                                            #{st.sheet}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                                         {hasCustom ? (
                                           <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] rounded-full font-bold inline-flex items-center gap-1">
-                                            <span>⚡ جدول خاص مفعل ({existingSchedule.schedule.length} درس)</span>
+                                            <span>⚡ جدول خاص ({existingSchedule.schedule.length} درس)</span>
                                           </span>
                                         ) : (
                                           <span className="px-2 py-0.5 bg-slate-800 text-slate-400 border border-slate-700 text-[10px] rounded-full">
@@ -2455,7 +2673,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     <button
                                       type="button"
-                                      onClick={() => handleSelectStudentForSchedule(uname)}
+                                      onClick={() => handleSelectStudentForSchedule(st.name, st.sheet)}
                                       className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center gap-1 shadow-md shadow-purple-600/20 transition-all cursor-pointer"
                                     >
                                       <Edit3 className="w-3.5 h-3.5" />
@@ -2465,7 +2683,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                                     {hasCustom && (
                                       <button
                                         type="button"
-                                        onClick={() => handleDeleteStudentCustomSchedule(uname)}
+                                        onClick={() => handleDeleteStudentCustomSchedule(st.name, st.sheet)}
                                         className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl transition-all cursor-pointer"
                                         title="إلغاء الجدول الخاص وإعادته للجدول العام"
                                       >
@@ -2483,19 +2701,57 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                   ) : (
                     /* STEP 2: CUSTOM SCHEDULE GENERATOR FOR SELECTED STUDENT */
                     <div className="space-y-6">
-                      {/* Back button header */}
-                      <div className="flex items-center justify-between pb-2">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedStudentForSchedule(null)}
-                          className="text-xs text-purple-400 hover:text-purple-300 font-bold flex items-center gap-1 cursor-pointer"
-                        >
-                          <ChevronLeft className="w-4 h-4 rotate-180" />
-                          <span>العودة لقائمة الطلاب</span>
-                        </button>
-                        
-                        <div className="text-xs text-slate-400">
-                          جاري الضبط للطالب: <strong className="text-purple-300 font-mono">{selectedStudentForSchedule}</strong>
+                      {/* Top banner of selected student */}
+                      <div className="p-3.5 bg-gradient-to-r from-purple-950/40 to-indigo-950/40 border border-purple-500/40 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-purple-500/20 text-purple-300 rounded-xl border border-purple-500/30">
+                            <UserCheck className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-extrabold text-sm text-slate-100">
+                                {selectedStudentForSchedule}
+                              </span>
+                              {selectedStudentSheetForSchedule && (
+                                <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full font-mono text-xs font-bold">
+                                  رقم الطالب (العمود B): {selectedStudentSheetForSchedule}
+                                </span>
+                              )}
+                              <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full text-xs font-bold">
+                                {(selectedStudentForSchedule && customSchedulesMap[selectedStudentForSchedule.toLowerCase()]?.schedule?.length) ||
+                                 (selectedStudentSheetForSchedule && customSchedulesMap[selectedStudentSheetForSchedule.toLowerCase()]?.schedule?.length)
+                                  ? '⚡ جدول خاص مفعل'
+                                  : 'جدول عام (افتراضي)'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-1">
+                              تظهر الآن الإعدادات الخاصة بهذا الطالب فقط، وحفظها يطبق الجدول عليه وحده دون بقية الطلاب.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {((selectedStudentForSchedule && customSchedulesMap[selectedStudentForSchedule.toLowerCase()]?.schedule?.length) ||
+                            (selectedStudentSheetForSchedule && customSchedulesMap[selectedStudentSheetForSchedule.toLowerCase()]?.schedule?.length)) ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteStudentCustomSchedule(selectedStudentForSchedule, selectedStudentSheetForSchedule)}
+                              className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                              title="إلغاء الجدول الخاص لهذا الطالب وإعادته للجدول العام"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                              <span>إلغاء الجدول الخاص</span>
+                            </button>
+                          ) : null}
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedStudentForSchedule(null)}
+                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5 rotate-180" />
+                            <span>العودة لقائمة الطلاب</span>
+                          </button>
                         </div>
                       </div>
 
@@ -2809,7 +3065,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                       className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-purple-600/25 cursor-pointer disabled:opacity-50 transition-all active:scale-98"
                     >
                       <Save className="w-4 h-4" />
-                      <span>حفظ وتفعيل الجدول الخاص للطالب ({selectedStudentForSchedule})</span>
+                      <span>حفظ وتفعيل الجدول الخاص للطالب ({selectedStudentForSchedule}{selectedStudentSheetForSchedule ? ` - رقم ${selectedStudentSheetForSchedule}` : ''})</span>
                     </button>
                   )}
                 </div>

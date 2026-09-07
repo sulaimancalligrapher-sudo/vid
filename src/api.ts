@@ -19,7 +19,7 @@ export function getWebAppUrl(): string {
   }
 
   // 3. Default fallback hardcoded URL
-  const fallbackUrl: string = 'https://script.google.com/macros/s/AKfycbwj70xPL289LQYrD5-EV1FWJSaYR5gaPn_Cfqi1W-uAUlf8C6i2CnZDsM6JKk6xhhvOZg/exec';
+  const fallbackUrl: string = 'https://script.google.com/macros/s/AKfycbx4u4sA1FhRY0O2WsTv_kbX7zVRvc19Msjc7RhzAOprfu8I9Ni0FPXOEd7rVTIIUORzaA/exec';
   if (fallbackUrl && fallbackUrl.trim().length > 0) {
     return fallbackUrl.trim();
   }
@@ -239,6 +239,30 @@ function mapAdminQuestionsToQuestions(qs?: AdminQuestionItem[]): Question[] {
   }));
 }
 
+export interface GeneralAutoScheduleConfig {
+  selectedDays: number[];
+  autoStartDate: string;
+  lessonsPerDay: number;
+  autoHideMode: 'days' | 'unifiedDate' | 'none';
+  autoExpireAfterDays: number | string;
+  autoUnifiedEndDate: string;
+}
+
+export function getGeneralAutoScheduleConfig(): GeneralAutoScheduleConfig | null {
+  try {
+    const raw = localStorage.getItem('generalAutoScheduleConfig');
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+export function saveGeneralAutoScheduleConfig(config: GeneralAutoScheduleConfig) {
+  try {
+    localStorage.setItem('generalAutoScheduleConfig', JSON.stringify(config));
+  } catch (e) {}
+}
+
 export interface StudentCustomScheduleItem {
   word: string;
   comment?: string;
@@ -249,6 +273,7 @@ export interface StudentCustomScheduleItem {
 
 export interface StudentCustomScheduleData {
   username: string;
+  sheetNumber?: string;
   updatedAt: string;
   config: {
     selectedDays: number[];
@@ -274,20 +299,32 @@ export function saveStudentCustomSchedule(username: string, data: StudentCustomS
   const map = getStudentCustomSchedulesMap();
   const key = username.trim().toLowerCase();
   map[key] = data;
+  if (data.sheetNumber && data.sheetNumber.trim()) {
+    map[data.sheetNumber.trim().toLowerCase()] = data;
+  }
   localStorage.setItem('studentCustomSchedules', JSON.stringify(map));
 }
 
-export function deleteStudentCustomSchedule(username: string) {
+export function deleteStudentCustomSchedule(username: string, sheetNumber?: string) {
   const map = getStudentCustomSchedulesMap();
   const key = username.trim().toLowerCase();
   delete map[key];
+  if (sheetNumber && sheetNumber.trim()) {
+    delete map[sheetNumber.trim().toLowerCase()];
+  }
   localStorage.setItem('studentCustomSchedules', JSON.stringify(map));
 }
 
-export function applyStudentCustomScheduleOverrides(lessons: WordData[], username?: string): WordData[] {
-  if (!username || !username.trim()) return lessons;
+export function applyStudentCustomScheduleOverrides(lessons: WordData[], username?: string, sheetNumber?: string): WordData[] {
+  if (!username && !sheetNumber) return lessons;
   const map = getStudentCustomSchedulesMap();
-  const studentData = map[username.trim().toLowerCase()];
+  let studentData: StudentCustomScheduleData | undefined;
+  if (username && username.trim()) {
+    studentData = map[username.trim().toLowerCase()];
+  }
+  if (!studentData && sheetNumber && sheetNumber.trim()) {
+    studentData = map[sheetNumber.trim().toLowerCase()];
+  }
   if (!studentData || !studentData.schedule || studentData.schedule.length === 0) {
     return lessons;
   }
@@ -385,7 +422,7 @@ export async function fetchLessons(sheetName: string, username?: string): Promis
     }
   }
 
-  return applyStudentCustomScheduleOverrides(lessons, username);
+  return applyStudentCustomScheduleOverrides(lessons, username, sheetName);
 }
 
 // 3. Save Question Answer (from YouTube Video or Explanation Audio)
@@ -1015,42 +1052,89 @@ export async function fetchStudentCorrections(username: string, sheetNumber: str
 // TELEGRAM INTEGRATION & NOTIFICATION SYSTEM
 // ==========================================
 
+export function normalizeLanguage(lang: any): 'ar' | 'th' | 'en' {
+  if (!lang) return 'ar';
+  const str = String(lang).trim().toLowerCase();
+
+  // Thai check
+  if (
+    str === 'th' ||
+    str === 'thai' ||
+    str === 'thailand' ||
+    str.includes('ไทย') ||
+    str.includes('ภาษาไทย') ||
+    str.includes('تايلاند') ||
+    str.includes('تايلند') ||
+    str.includes('🇹🇭')
+  ) {
+    return 'th';
+  }
+
+  // English check
+  if (
+    str === 'en' ||
+    str === 'eng' ||
+    str === 'english' ||
+    str.includes('انجليز') ||
+    str.includes('إنجليز') ||
+    str.includes('انكليز') ||
+    str.includes('إنكليز') ||
+    str.includes('🇬🇧') ||
+    str.includes('🇺🇸')
+  ) {
+    return 'en';
+  }
+
+  // Arabic default
+  return 'ar';
+}
+
+export function formatLanguageBadge(lang: any): string {
+  const norm = normalizeLanguage(lang);
+  if (norm === 'th') return '🇹🇭 تايلاندي (TH)';
+  if (norm === 'en') return '🇬🇧 إنجليزي (EN)';
+  return '🇸🇦 عربي (AR)';
+}
+
 export const DEFAULT_TELEGRAM_TEMPLATES: TelegramTemplateItem[] = [
   {
     key: 'homework_received',
     title: 'تأكيد استلام الواجب (للطالب)',
-    description: 'يُرسل للطالب فور رفع الواجب في المنصة',
-    ar: 'مرحباً {student} 👋\nتم استلام واجبك في درس: 📚 {lesson}\n(المحاولة: {send_count})\nملفاتك وصلت للأستاذ وجارٍ جدولتها للتصحيح ⏳\nبالتوفيق والنجاح! 🌟',
-    th: 'สวัสดี {student} 👋\nได้รับส่งการบ้านบทเรียน: 📚 {lesson} เรียบร้อยแล้ว!\n(ครั้งที่: {send_count})\nไฟล์ของคุณส่งถึงอาจารย์แล้วและกำลังรอการตรวจ ⏳\nขอให้โชคดีและประสบความสำเร็จ! 🌟',
-    en: 'Hello {student} 👋\nYour homework for: 📚 {lesson} has been received!\n(Submission: {send_count})\nYour submission reached the teacher and is queued for review ⏳\nBest of luck! 🌟',
-    variables: ['{student}', '{lesson}', '{sheet}', '{send_count}']
-  },
-  {
-    key: 'correction_ready',
-    title: 'إشعار جاهزية التصحيح (للطالب)',
-    description: 'يُرسل للطالب عند رصد الدرجة والملاحظات في شيت التصحيح',
-    ar: '🎉 مرحباً {student}!\nتم تصحيح واجبك في درس: 📚 {lesson}\n\n🏆 النتيجة / الدرجة: {score}\n📝 ملاحظات الأستاذ: {notes}\n\nاضغط على الزر أدناه لمعاينة التصحيح والشرح الصوتي المفصل 👇',
-    th: '🎉 สวัสดี {student}!\nการตรวจการบ้านบทเรียน: 📚 {lesson} เสร็จสมบูรณ์แล้ว!\n\n🏆 คะแนน/ผลลัพธ์: {score}\n📝 บันทึกจากอาจารย์: {notes}\n\nกดปุ่มด้านล่างเพื่อดูผลการตรวจและคำอธิบายเสียงอย่างละเอียด 👇',
-    en: '🎉 Hello {student}!\nYour homework for: 📚 {lesson} has been reviewed!\n\n🏆 Result / Score: {score}\n📝 Teacher Notes: {notes}\n\nClick the button below to view detailed correction and audio feedback 👇',
-    variables: ['{student}', '{lesson}', '{sheet}', '{score}', '{notes}']
+    description: 'يُرسل للطالب فور اكتمال حل الواجب وظهور كلمة "تم" في العمود AO',
+    ar: '✅ تم استلام واجبك بنجاح يا {student}!\n📚 الدرس: {lesson}\nتم إرسال إجاباتك وملفاتك إلى الأستاذ، وسيصلك إشعار التصحيح فور اعتماده 🌸',
+    th: '✅ ได้รับการบ้านเรียบร้อยแล้ว คุณ {student}!\n📚 บทเรียน: {lesson}\nส่งคำตอบและไฟล์ไปยังอาจารย์แล้ว และจะแจ้งผลการตรวจทันทีที่เสร็จสิ้น 🌸',
+    en: '✅ Your homework for: 📚 {lesson} has been received, {student}!\nYour answers and files have been sent to the teacher. You will be notified once reviewed 🌸',
+    variables: ['{student}', '{lesson}', '{sheet}'],
+    buttonTextAr: '🔗 فتح ملف الواجب',
+    buttonTextTh: '🔗 เปิดไฟล์การบ้าน',
+    buttonTextEn: '🔗 View Homework File',
+    buttonUrl: ''
   },
   {
     key: 'new_homework_teacher',
-    title: 'إشعار واجب جديد (للأستاذ والقروب)',
-    description: 'يُرسل في خاص الأستاذ أو قروب الأساتذة عند تسليم طالب لواجبه',
-    ar: '🔔 واجب جديد تم تسليمه!\n\n👤 الطالب: {student} (شيت #{sheet})\n📖 الدرس: {lesson}\n📦 نوع التسليم: {type}\n🔢 عدد المحاولات: {send_count}\n⏰ الوقت: {time}',
-    th: '🔔 มีการส่งการบ้านใหม่!\n\n👤 นักเรียน: {student} (ชีท #{sheet})\n📖 บทเรียน: {lesson}\n📦 ประเภท: {type}\n🔢 จำนวนส่ง: {send_count}\n⏰ เวลา: {time}',
-    en: '🔔 New homework submitted!\n\n👤 Student: {student} (Sheet #{sheet})\n📖 Lesson: {lesson}\n📦 Type: {type}\n🔢 Submissions count: {send_count}\n⏰ Time: {time}',
-    variables: ['{student}', '{sheet}', '{lesson}', '{type}', '{send_count}', '{time}']
+    title: 'إشعار تسليم واجب جديد (للأستاذ والقروب)',
+    description: 'يُرسل في خاص الأستاذ أو قروب الأساتذة عند تسليم طالب لواجبه كاملاً لأول مرة',
+    ar: '📝 تسليم واجب جديد\n👤 الطالب: {student}\n🔢 رقم الطالب/الشيت: #{sheet}\n📚 الموضوع: {lesson}\n📊 النتيجة الكلية: {score}',
+    th: '📝 ส่งการบ้านใหม่\n👤 นักเรียน: {student}\n🔢 ชีท: #{sheet}\n📚 บทเรียน: {lesson}\n📊 คะแนนรวม: {score}',
+    en: '📝 New Homework Submission\n👤 Student: {student}\n🔢 Sheet: #{sheet}\n📚 Lesson: {lesson}\n📊 Total Score: {score}',
+    variables: ['{student}', '{sheet}', '{lesson}', '{score}'],
+    buttonTextAr: '',
+    buttonTextTh: '',
+    buttonTextEn: '',
+    buttonUrl: ''
   },
   {
-    key: 'general_announcement',
-    title: 'تنبيه أو إعلان عام (جماعي)',
-    description: 'يُستخدم عند إرسال تعميم أو تذكير لجميع الطلاب أو طالب محدد',
-    ar: '📢 تنبيه هام من إدارة الدورة:\n\n{message}\n\nنتمنى لكم دوام التوفيق والتميز ✨',
-    th: '📢 ประกาศสำคัญจากฝ่ายบริหารหลักสูตร:\n\n{message}\n\nขอให้ทุกท่านมีความสุขและประสบความสำเร็จในการเรียนรู้ ✨',
-    en: '📢 Important Announcement:\n\n{message}\n\nWishing you continued success and excellence ✨',
-    variables: ['{student}', '{message}']
+    key: 'resubmit_homework_teacher',
+    title: 'إشعار إعادة تسليم / تعديل واجب (للأستاذ والقروب)',
+    description: 'يُرسل للأستاذ عند قيام الطالب بإعادة رفع تسجيل أو صورة بعد التصحيح',
+    ar: '🔄 تنبيه: إعادة تسليم واجب\n👤 الطالب: {student}\n🔢 رقم الطالب/الشيت: #{sheet}\n📚 الموضوع: {lesson}\n⚠️ نوع التحديث: {type}\n📊 النتيجة الكلية: {score}',
+    th: '🔄 มีการส่งการบ้านซ้ำ/แก้ไข\n👤 นักเรียน: {student}\n🔢 ชีท: #{sheet}\n📚 บทเรียน: {lesson}\n⚠️ ประเภทการอัปเดต: {type}\n📊 คะแนนรวม: {score}',
+    en: '🔄 Homework Resubmission / Update\n👤 Student: {student}\n🔢 Sheet: #{sheet}\n📚 Lesson: {lesson}\n⚠️ Update Type: {type}\n📊 Total Score: {score}',
+    variables: ['{student}', '{sheet}', '{lesson}', '{type}', '{score}'],
+    buttonTextAr: '',
+    buttonTextTh: '',
+    buttonTextEn: '',
+    buttonUrl: ''
   }
 ];
 
@@ -1144,6 +1228,47 @@ export function saveTelegramTemplates(templates: TelegramTemplateItem[]): void {
   localStorage.setItem(TELEGRAM_TEMPLATES_STORAGE_KEY, JSON.stringify(templates));
 }
 
+// Save templates directly to Google Sheets (Telegram_Templates)
+export async function saveTelegramTemplatesToSheet(templates: TelegramTemplateItem[]): Promise<{ success: boolean; message?: string }> {
+  saveTelegramTemplates(templates);
+  try {
+    const res = await fetchGas({ action: 'saveTelegramTemplates' }, 'POST', {
+      action: 'saveTelegramTemplates',
+      templates: templates
+    });
+    return res && typeof res === 'object' ? res : { success: true };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'تعذر حفظ القوالب في Google Sheets' };
+  }
+}
+
+// Fetch templates directly from Google Sheet (Telegram_Templates)
+export async function fetchTelegramTemplatesFromSheet(): Promise<{ success: boolean; templates?: TelegramTemplateItem[]; error?: string }> {
+  try {
+    const res = await fetchGas({ action: 'getTelegramTemplates' }, 'GET');
+    if (Array.isArray(res) && res.length > 0) {
+      const formatted: TelegramTemplateItem[] = res.map((item: any) => ({
+        key: item.key,
+        title: item.title || item.key,
+        description: item.description || '',
+        ar: item.text_ar || item.ar || '',
+        th: item.text_th || item.th || '',
+        en: item.text_en || item.en || '',
+        variables: DEFAULT_TELEGRAM_TEMPLATES.find(d => d.key === item.key)?.variables || ['{student}', '{lesson}'],
+        buttonTextAr: item.button_text_ar || item.buttonTextAr || '',
+        buttonTextTh: item.button_text_th || item.buttonTextTh || '',
+        buttonTextEn: item.button_text_en || item.buttonTextEn || '',
+        buttonUrl: item.button_url || item.buttonUrl || ''
+      }));
+      saveTelegramTemplates(formatted);
+      return { success: true, templates: formatted };
+    }
+    return { success: true, templates: DEFAULT_TELEGRAM_TEMPLATES };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 export function getLinkedTelegramStudents(): Record<string, TelegramUserBinding> {
   const saved = localStorage.getItem(TELEGRAM_STUDENTS_STORAGE_KEY);
   if (saved) {
@@ -1171,12 +1296,78 @@ export function removeLinkedTelegramStudent(studentName: string, sheetNumber: st
 // Fetch all students registered in Settings sheet (Columns B & C)
 export async function fetchSettingsStudentsFromSheet(): Promise<{ success: boolean; students?: Array<{ name: string; sheet: string }>; error?: string }> {
   try {
-    const data = await fetchGas({ action: 'getAllSettingsStudents' }, 'GET');
-    if (Array.isArray(data)) {
-      return { success: true, students: data };
+    let data: any = null;
+    if (isApiConfigured()) {
+      try {
+        data = await fetchGas({ action: 'getAllSettingsStudents' }, 'GET');
+      } catch (e) {
+        try {
+          data = await fetchGas({ action: 'getAllSettingsStudents' }, 'POST', { action: 'getAllSettingsStudents' });
+        } catch (e2) {}
+      }
     }
-    return { success: true, students: [] };
+    if (Array.isArray(data) && data.length > 0) {
+      const valid = data
+        .filter((s: any) => s && (s.name || s.sheet))
+        .map((s: any) => ({
+          name: String(s.name || '').trim(),
+          sheet: String(s.sheet || '').trim()
+        }));
+      if (valid.length > 0) {
+        localStorage.setItem('cached_settings_students', JSON.stringify(valid));
+        return { success: true, students: valid };
+      }
+    }
+
+    // Try reading cached students
+    const cached = localStorage.getItem('cached_settings_students');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return { success: true, students: parsed };
+        }
+      } catch (e) {}
+    }
+
+    // Fallback from answers or default list
+    const mockAnswers = localStorage.getItem('mockAdminAnswers');
+    if (mockAnswers) {
+      try {
+        const parsed = JSON.parse(mockAnswers);
+        if (Array.isArray(parsed)) {
+          const map = new Map<string, { name: string; sheet: string }>();
+          parsed.forEach((a: any) => {
+            if (a.username) {
+              const name = String(a.username).trim();
+              const sheet = String(a.sheetNumber || '1').trim();
+              map.set(name.toLowerCase(), { name, sheet });
+            }
+          });
+          if (map.size > 0) {
+            return { success: true, students: Array.from(map.values()) };
+          }
+        }
+      } catch (e) {}
+    }
+
+    const defaultStudents = [
+      { name: 'حنين', sheet: '222' },
+      { name: 'أحمد علي', sheet: '101' },
+      { name: 'سارة محمد', sheet: '102' },
+      { name: 'عبدالله خالد', sheet: '103' }
+    ];
+    return { success: true, students: defaultStudents };
   } catch (err: any) {
+    const cached = localStorage.getItem('cached_settings_students');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return { success: true, students: parsed };
+        }
+      } catch (e) {}
+    }
     return { success: false, error: err.message || 'تعذر جلب الطلاب من ورقة Settings.' };
   }
 }

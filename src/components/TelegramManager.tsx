@@ -11,11 +11,12 @@ import {
 } from '../types';
 import { 
   getTelegramConfig, saveTelegramConfig, saveTelegramConfigToSheet, fetchTelegramConfigFromSheet, getTelegramTemplates, saveTelegramTemplates,
+  saveTelegramTemplatesToSheet, fetchTelegramTemplatesFromSheet,
   getLinkedTelegramStudents, saveLinkedTelegramStudent, removeLinkedTelegramStudent,
   generateStudentTelegramLink, testTelegramBotToken, getTelegramRecentUpdates,
   sendTelegramMessageDirect, setTelegramWebhook, deleteTelegramWebhook, getTelegramWebhookInfo, getWebAppUrl,
   fetchLinkedTelegramUsersFromSheet, fetchSettingsStudentsFromSheet, setupTelegramSheetsInGas, simulateTelegramWebhookInGas, bindTelegramUserInGas,
-  syncTeacherCorrectionsFromA1,
+  normalizeLanguage, formatLanguageBadge,
   DEFAULT_TELEGRAM_TEMPLATES
 } from '../api';
 
@@ -36,19 +37,18 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
   const [settingWebhook, setSettingWebhook] = useState(false);
   const [webhookInfo, setWebhookInfo] = useState<any>(null);
   const [testingTeacherMsg, setTestingTeacherMsg] = useState(false);
-  const [syncingCorrections, setSyncingCorrections] = useState(false);
 
   // Templates State
   const [templates, setTemplates] = useState<TelegramTemplateItem[]>(getTelegramTemplates());
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>(templates[0]?.key || 'homework_received');
+  const [savingTemplates, setSavingTemplates] = useState(false);
 
   // Linked Students & Settings Students State
   const [linkedStudents, setLinkedStudents] = useState<Record<string, TelegramUserBinding>>(getLinkedTelegramStudents());
   const [settingsStudents, setSettingsStudents] = useState<Array<{ name: string; sheet: string }>>([]);
   const [searchStudent, setSearchStudent] = useState('');
-  const [selectedStudentForLink, setSelectedStudentForLink] = useState<{ name: string; sheet: string } | null>(null);
-  const [copiedLink, setCopiedLink] = useState(false);
-  const [copiedMessage, setCopiedMessage] = useState(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
+  const [isAutoSyncing, setIsAutoSyncing] = useState(false);
 
   // Broadcast Message State
   const [broadcastRecipient, setBroadcastRecipient] = useState<'all' | 'specific_student' | 'teacher' | 'group'>('teacher');
@@ -64,49 +64,6 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
   const [simulatingWebhook, setSimulatingWebhook] = useState(false);
   const [settingUpSheets, setSettingUpSheets] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
-
-  // Load configuration on mount + Auto-sync linked students from Google Sheets
-  useEffect(() => {
-    const cfg = getTelegramConfig();
-    setConfig(cfg);
-    setTemplates(getTelegramTemplates());
-    setLinkedStudents(getLinkedTelegramStudents());
-    if (cfg.botToken) {
-      getTelegramWebhookInfo(cfg.botToken).then(res => {
-        if (res.success) setWebhookInfo(res.data);
-      });
-    }
-
-    // Auto-fetch latest Telegram configuration from Google Sheets (Telegram_Config sheet)
-    fetchTelegramConfigFromSheet().then(res => {
-      if (res.success && res.config) {
-        setConfig(prev => ({
-          ...prev,
-          botToken: res.config?.botToken || prev.botToken,
-          botUsername: res.config?.botUsername || prev.botUsername,
-          teacherChatId: res.config?.teacherChatId || prev.teacherChatId,
-          groupChatId: res.config?.groupChatId || prev.groupChatId,
-          enableTeacherPrivate: res.config?.enableTeacherPrivate !== undefined ? res.config.enableTeacherPrivate : prev.enableTeacherPrivate,
-          enableStudentPrivate: res.config?.enableStudentPrivate !== undefined ? res.config.enableStudentPrivate : prev.enableStudentPrivate,
-          enableGroupNotify: res.config?.enableGroupNotify !== undefined ? res.config.enableGroupNotify : prev.enableGroupNotify,
-        }));
-      }
-    }).catch(() => {});
-
-    // Auto-fetch latest registered students directly from Google Sheets (Telegram_Users sheet) on open
-    fetchLinkedTelegramUsersFromSheet().then(res => {
-      if (res.success && res.users) {
-        setLinkedStudents(res.users);
-      }
-    }).catch(() => {});
-
-    // Auto-fetch all registered students in Settings sheet (Columns B & C)
-    fetchSettingsStudentsFromSheet().then(res => {
-      if (res.success && res.students && res.students.length > 0) {
-        setSettingsStudents(res.students);
-      }
-    }).catch(() => {});
-  }, []);
 
   // Extract unique students list from Settings sheet (primary), answers, and linkedStudents
   const uniqueStudents = React.useMemo(() => {
@@ -142,10 +99,14 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
     return Array.from(map.values());
   }, [settingsStudents, answers, linkedStudents]);
 
-  const handleSyncStudentsFromSheet = async () => {
-    setSyncingSheetStudents(true);
+  const syncStudentsData = React.useCallback(async (silent: boolean = false) => {
+    if (silent) {
+      setIsAutoSyncing(true);
+    } else {
+      setSyncingSheetStudents(true);
+    }
     try {
-      // 1) Sync Telegram linked users
+      // 1) Sync Telegram linked users from Telegram_Users sheet
       const resUsers = await fetchLinkedTelegramUsersFromSheet();
       let linkedCount = 0;
       if (resUsers.success && resUsers.users) {
@@ -161,12 +122,27 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
         totalStudentsCount = resSettings.students.length;
       }
 
-      onNotify(`تمت المزامنة بنجاح! تم جلب ${totalStudentsCount || uniqueStudents.length} طالب من ورقة Settings، و ${linkedCount} طالب مربوط في التلغرام 🔄`, 'success');
+      const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setLastSyncedTime(nowStr);
+
+      if (!silent) {
+        onNotify(`تمت المزامنة بنجاح! تم جلب ${totalStudentsCount || uniqueStudents.length} طالب من ورقة Settings، و ${linkedCount} طالب مربوط في التلغرام 🔄 (${nowStr})`, 'success');
+      }
     } catch (err: any) {
-      onNotify('تعذر مزامنة بيانات الطلاب: ' + (err.message || ''), 'error');
+      if (!silent) {
+        onNotify('تعذر مزامنة بيانات الطلاب: ' + (err.message || ''), 'error');
+      }
     } finally {
-      setSyncingSheetStudents(false);
+      if (silent) {
+        setIsAutoSyncing(false);
+      } else {
+        setSyncingSheetStudents(false);
+      }
     }
+  }, [onNotify, uniqueStudents.length]);
+
+  const handleSyncStudentsFromSheet = async () => {
+    await syncStudentsData(false);
   };
 
   const handleSetupSheets = async () => {
@@ -200,22 +176,6 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
       onNotify('فشل محاكاة الإرسال: ' + err.message, 'error');
     } finally {
       setSimulatingWebhook(false);
-    }
-  };
-
-  const handleSyncCorrections = async () => {
-    setSyncingCorrections(true);
-    try {
-      const res = await syncTeacherCorrectionsFromA1();
-      if (res.success) {
-        onNotify(`تم فحص ورقة A1 بنجاح! ${res.message || ''}`, 'success');
-      } else {
-        onNotify(`استجابة الفحص: ${res.message || 'تعذر الفحص'}`, 'error');
-      }
-    } catch (err: any) {
-      onNotify('خطأ أثناء فحص تصحيحات الأستاذ: ' + err.message, 'error');
-    } finally {
-      setSyncingCorrections(false);
     }
   };
 
@@ -405,20 +365,42 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
     }
   };
 
-  const handleSaveTemplates = () => {
-    saveTelegramTemplates(templates);
-    onNotify('تم حفظ قوالب رسائل التلغرام بنجاح! 📝', 'success');
-  };
-
-  const handleResetTemplates = () => {
-    if (confirm('هل أنت متأكد من إعادة ضبط قوالب الرسائل إلى النصوص الافتراضية؟')) {
-      setTemplates(DEFAULT_TELEGRAM_TEMPLATES);
-      saveTelegramTemplates(DEFAULT_TELEGRAM_TEMPLATES);
-      onNotify('تمت استعادة قوالب الرسائل الافتراضية.', 'success');
+  const handleSaveTemplates = async () => {
+    setSavingTemplates(true);
+    try {
+      const res = await saveTelegramTemplatesToSheet(templates);
+      if (res.success) {
+        onNotify('تم حفظ قوالب رسائل التلغرام وتحديثها في Google Sheets بنجاح! 📝💾', 'success');
+      } else {
+        onNotify('تم الحفظ محلياً: ' + (res.message || ''), 'warning' as any);
+      }
+    } catch (err: any) {
+      onNotify('تم الحفظ محلياً: ' + (err.message || ''), 'warning' as any);
+    } finally {
+      setSavingTemplates(false);
     }
   };
 
-  const updateTemplateField = (key: string, field: 'ar' | 'th' | 'en', val: string) => {
+  const handleResetTemplates = async () => {
+    if (confirm('هل أنت متأكد من إعادة ضبط قوالب الرسائل إلى النصوص الافتراضية؟')) {
+      setTemplates(DEFAULT_TELEGRAM_TEMPLATES);
+      setSavingTemplates(true);
+      try {
+        await saveTelegramTemplatesToSheet(DEFAULT_TELEGRAM_TEMPLATES);
+        onNotify('تمت استعادة قوالب الرسائل الافتراضية وتحديث الشيت بنجاح.', 'success');
+      } catch {
+        onNotify('تمت استعادة القوالب الافتراضية محلياً.', 'success');
+      } finally {
+        setSavingTemplates(false);
+      }
+    }
+  };
+
+  const updateTemplateField = (
+    key: string,
+    field: 'ar' | 'th' | 'en' | 'buttonTextAr' | 'buttonTextTh' | 'buttonTextEn' | 'buttonUrl',
+    val: string
+  ) => {
     const updated = templates.map(t => t.key === key ? { ...t, [field]: val } : t);
     setTemplates(updated);
   };
@@ -559,7 +541,7 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
           }`}
         >
           <Users className="w-4 h-4" />
-          <span>دليل الطلاب وروابط الاشتراك</span>
+          <span>دليل الطلاب وحالة ربط التلغرام</span>
         </button>
 
         <button
@@ -737,27 +719,6 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
                 </div>
               </div>
             )}
-
-            {/* Teacher Correction Sheet (A1) Sync Section */}
-            <div className="p-4 bg-gradient-to-r from-amber-950/40 via-slate-900 to-orange-950/40 border border-amber-500/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div>
-                <h4 className="text-xs font-extrabold text-amber-400 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <span>مزامنة وفحص تصحيحات الأستاذ من ورقة (A1) فوراً:</span>
-                </h4>
-                <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                  يقوم بقراءة ورقة <b>A1</b> في شيت التصحيح الخارجي، واستخراج درجات التمارين وصور التصحيح ومرفقات التوضيح (صوت/فيديو/صور) وإرسالها مباشرة للطلاب في تلغرام كصور ورسائل مزودة بأزرار تفاعلية.
-                </p>
-              </div>
-              <button
-                onClick={handleSyncCorrections}
-                disabled={syncingCorrections || !config.botToken}
-                className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 text-xs font-extrabold rounded-xl transition-all shadow-md shadow-amber-900/30 flex items-center gap-2 disabled:opacity-50 cursor-pointer shrink-0"
-              >
-                {syncingCorrections ? <RefreshCw className="w-4 h-4 animate-spin text-slate-950" /> : <Send className="w-4 h-4 text-slate-950" />}
-                <span>{syncingCorrections ? 'جاري فحص وإرسال التصحيحات...' : 'فحص ورقة A1 وإرسال التصحيحات 🚀'}</span>
-              </button>
-            </div>
 
             {/* One-Click Sheets Setup Banner */}
             <div className="p-4 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-teal-950/40 border border-emerald-500/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -1200,13 +1161,88 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
                   </div>
                 </div>
 
+                {/* Optional Interactive Button Configuration */}
+                <div className="p-4 bg-slate-950 border border-amber-500/25 rounded-xl space-y-3 mt-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <LinkIcon className="w-4 h-4" />
+                      <span>زر تفاعلي مدمج في الرسالة (Inline Button URL):</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      اختياري • يدعم المتغيرات مثل &#123;sheet&#125;
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">
+                      رابط الزر (URL) — اتركه فارغاً إذا كنت لا تريد إرفاق زر:
+                    </label>
+                    <input
+                      type="url"
+                      value={activeTemplate.buttonUrl || ''}
+                      onChange={e => updateTemplateField(activeTemplate.key, 'buttonUrl', e.target.value)}
+                      placeholder="مثال: https://docs.google.com/spreadsheets/d/.../edit أو https://mysite.com?sheet={sheet}"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 text-slate-100 rounded-xl text-xs outline-none font-mono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                        🇸🇦 نص الزر (بالعربية):
+                      </label>
+                      <input
+                        type="text"
+                        value={activeTemplate.buttonTextAr || ''}
+                        onChange={e => updateTemplateField(activeTemplate.key, 'buttonTextAr', e.target.value)}
+                        placeholder="🔗 فتح ملف الواجب"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 text-slate-200 rounded-xl text-xs outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                        🇹🇭 نص الزر (بالتايلاندية):
+                      </label>
+                      <input
+                        type="text"
+                        value={activeTemplate.buttonTextTh || ''}
+                        onChange={e => updateTemplateField(activeTemplate.key, 'buttonTextTh', e.target.value)}
+                        placeholder="🔗 เปิดไฟล์การบ้าน"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 text-slate-200 rounded-xl text-xs outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                        🇬🇧 نص الزر (بالإنجليزية):
+                      </label>
+                      <input
+                        type="text"
+                        value={activeTemplate.buttonTextEn || ''}
+                        onChange={e => updateTemplateField(activeTemplate.key, 'buttonTextEn', e.target.value)}
+                        placeholder="🔗 View Homework File"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 text-slate-200 rounded-xl text-xs outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {activeTemplate.buttonUrl && (
+                    <div className="flex items-center gap-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[11px] text-amber-200">
+                      <span>معاينة الزر:</span>
+                      <span className="px-3 py-1 bg-amber-500 text-slate-950 font-bold rounded-lg shadow-sm">
+                        {activeTemplate.buttonTextAr || activeTemplate.buttonTextEn || '🔗 فتح الرابط'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 <div className="pt-2 flex justify-end">
                   <button
                     onClick={handleSaveTemplates}
-                    className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                    disabled={savingTemplates}
+                    className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
                   >
-                    <Check className="w-4 h-4" />
-                    <span>حفظ تعديلات القوالب</span>
+                    {savingTemplates ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    <span>{savingTemplates ? 'جاري الحفظ في الشيت...' : 'حفظ ومزامنة القوالب مع Google Sheets 💾'}</span>
                   </button>
                 </div>
               </div>
@@ -1225,141 +1261,11 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
                   <Users className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-base font-extrabold text-slate-100">دليل الطلاب وتوليد روابط الاشتراك السريعة</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">شارك رابط البوت مع أي طالب ليرتبط حسابه بالتليجرام بضغطة زر واحدة</p>
+                  <h3 className="text-base font-extrabold text-slate-100">دليل الطلاب وحالة ربط التلغرام</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">قائمة بجميع الطلاب المسجلين وحالة ربط حساباتهم بالتلغرام واللغة المحددة للإشعارات</p>
                 </div>
               </div>
             </div>
-
-            {/* Quick Link Generator & Student Binding Hub */}
-            {config.botUsername ? (
-              <div className="p-4 bg-slate-900/80 border border-sky-500/30 rounded-2xl space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <h4 className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
-                    <LinkIcon className="w-4 h-4" />
-                    <span>طرق ربط واشتراك الطلاب في التلغرام:</span>
-                  </h4>
-                  <span className="text-[10px] px-2.5 py-1 bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 rounded-lg">
-                    🔒 تشمل رسالة تطمين أمان وخصوصية للطالب
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  {/* Method 1: General Bot username + sheet number */}
-                  <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
-                    <div className="flex items-center gap-1.5 font-bold text-amber-300 text-[11px]">
-                      <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center text-[10px]">1</span>
-                      <span>الطريقة الأسهل (رابط البوت العام):</span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      يرسل الطالب فقط <b>رقم الشيت</b> الخاص به (مثال: <code className="text-amber-300 font-mono">222</code>) إلى البوت مباشرة فيتعرف عليه البوت ويربطه فوراً!
-                    </p>
-                    <div className="flex items-center gap-2 pt-1">
-                      <span className="text-[11px] text-slate-300 font-mono">@{config.botUsername.replace(/^@/, '')}</span>
-                      <button
-                        onClick={() => {
-                          const botUrl = `https://t.me/${config.botUsername.replace(/^@/, '')}`;
-                          navigator.clipboard.writeText(botUrl);
-                          setCopiedLink(true);
-                          setTimeout(() => setCopiedLink(false), 2000);
-                        }}
-                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] rounded-lg transition-all"
-                      >
-                        نسخ رابط البوت
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Method 2: Individual Deep Link */}
-                  <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
-                    <div className="flex items-center gap-1.5 font-bold text-sky-300 text-[11px]">
-                      <span className="w-5 h-5 rounded-full bg-sky-500/20 text-sky-300 flex items-center justify-center text-[10px]">2</span>
-                      <span>طريقة الرابط السريع المخصص (Deep Link):</span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      توليد رابط خاص بطالب معين، بمجرد نقره على الرابط والضغط على <b>Start</b> يتم ربطه تلقائياً.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Student Selection for Link / Invitation */}
-                <div className="pt-2 border-t border-slate-800/80 space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-400 mb-1">اختر الطالب لتوليد رابطه ورسالة دعوته:</label>
-                      <select
-                        onChange={e => {
-                          const val = e.target.value;
-                          if (val) {
-                            const [name, sheet] = val.split('___');
-                            setSelectedStudentForLink({ name, sheet });
-                          } else {
-                            setSelectedStudentForLink(null);
-                          }
-                        }}
-                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 text-slate-200 rounded-xl text-xs outline-none"
-                      >
-                        <option value="">-- اختر طالباً --</option>
-                        {uniqueStudents.map((s, idx) => (
-                          <option key={idx} value={`${s.name}___${s.sheet}`}>
-                            {s.name} (شيت #{s.sheet})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {selectedStudentForLink && (
-                      <div className="flex flex-col justify-end">
-                        {(() => {
-                          const link = generateStudentTelegramLink(
-                            config.botUsername || '',
-                            selectedStudentForLink.name,
-                            selectedStudentForLink.sheet
-                          );
-                          const inviteMsg = `مرحباً ${selectedStudentForLink.name} 🌸\nلتفعيل وصول إشعارات تصحيح واجباتك ودرجاتك وملاحظات الأستاذ في التلغرام بكل أمان وخصوصية:\n\n1️⃣ اضغط على الرابط التالي ثم اضغط زر (Start / بدء):\n${link}\n\n2️⃣ أو افتح البوت @${config.botUsername.replace(/^@/, '')} وأرسل رقم الشيت الخاص بك: ${selectedStudentForLink.sheet}`;
-
-                          return (
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(link);
-                                  setCopiedLink(true);
-                                  setTimeout(() => setCopiedLink(false), 2000);
-                                }}
-                                className={`flex-1 px-3 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1 shrink-0 ${
-                                  copiedLink ? 'bg-emerald-500/20 text-emerald-300' : 'bg-sky-600 text-white hover:bg-sky-500'
-                                }`}
-                              >
-                                {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                                <span>{copiedLink ? 'تم نسخ الرابط!' : 'نسخ الرابط المباشر'}</span>
-                              </button>
-
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(inviteMsg);
-                                  setCopiedMessage(true);
-                                  setTimeout(() => setCopiedMessage(false), 2000);
-                                }}
-                                className={`flex-1 px-3 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1 shrink-0 ${
-                                  copiedMessage ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500 text-slate-950 hover:bg-amber-600'
-                                }`}
-                              >
-                                {copiedMessage ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
-                                <span>{copiedMessage ? 'تم نسخ الرسالة!' : 'نسخ رسالة الدعوة والتطمين للطالب'}</span>
-                              </button>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-300">
-                ⚠️ يرجى إدخال <b>اسم مستخدم البوت (Bot Username)</b> في قسم الإعدادات لتفعيل مولّد روابط الاشتراك السريعة.
-              </div>
-            )}
 
             {/* Students List Table */}
             <div className="space-y-3">
@@ -1369,15 +1275,22 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
                   <span className="px-2 py-0.5 bg-slate-800 text-slate-400 rounded-full text-[10px]">
                     {uniqueStudents.length} طالب
                   </span>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[10px] text-emerald-400 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>مزامنة حية نشطة</span>
+                    {lastSyncedTime && (
+                      <span className="text-slate-400 text-[9px] mr-1">({lastSyncedTime})</span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleSyncStudentsFromSheet}
-                    disabled={syncingSheetStudents}
+                    disabled={syncingSheetStudents || isAutoSyncing}
                     className="px-3 py-1.5 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${syncingSheetStudents ? 'animate-spin' : ''}`} />
-                    <span>مزامنة من Google Sheet 🔄</span>
+                    <RefreshCw className={`w-3.5 h-3.5 ${syncingSheetStudents || isAutoSyncing ? 'animate-spin' : ''}`} />
+                    <span>مزامنة فورية 🔄</span>
                   </button>
                   <input
                     type="text"
@@ -1396,7 +1309,7 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
                       <th className="p-3">اسم الطالب</th>
                       <th className="p-3 text-center">رقم الشيت</th>
                       <th className="p-3 text-center">معرّف التليجرام (Chat ID)</th>
-                      <th className="p-3 text-center">اللغة</th>
+                      <th className="p-3 text-center">اللغة المفعلة</th>
                       <th className="p-3 text-center">حالة الربط</th>
                       <th className="p-3 text-center">إجراءات واختبارات</th>
                     </tr>
@@ -1414,8 +1327,10 @@ export default function TelegramManager({ answers, onNotify }: TelegramManagerPr
                             <td className="p-3 text-center font-mono text-slate-300">
                               {binding?.chatId || <span className="text-slate-600">-</span>}
                             </td>
-                            <td className="p-3 text-center text-slate-400">
-                              {binding?.language ? binding.language.toUpperCase() : 'AR'}
+                            <td className="p-3 text-center">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-bold bg-slate-900 border border-slate-800 text-slate-200 shadow-sm">
+                                {formatLanguageBadge(binding?.language || (binding as any)?.rawLanguage || 'ar')}
+                              </span>
                             </td>
                             <td className="p-3 text-center">
                               {binding?.chatId ? (

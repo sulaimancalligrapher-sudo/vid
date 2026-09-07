@@ -33,26 +33,28 @@ export default function LessonList({
   const [resetError, setResetError] = React.useState<string | null>(null);
   const [showCorrectionModal, setShowCorrectionModal] = React.useState(false);
 
-  const completedCount = React.useMemo(() => {
-    return lessons.filter(l => l.completed === 'تم').length;
-  }, [lessons]);
+  const isLessonCompleted = (l: WordData): boolean => {
+    if (!l || !l.completed) return false;
+    const clean = String(l.completed).trim().toLowerCase();
+    return clean === 'تم' || clean === 'completed' || clean === 'done';
+  };
 
-  const lessonsWithIndex = React.useMemo(() => {
-    return lessons.map((lesson, originalIndex) => ({
-      ...lesson,
-      originalIndex,
-    }));
-  }, [lessons]);
+  // Helper to parse dates flexibly (Arabic numerals, ISO, YYYY-MM-DD, DD/MM/YYYY, etc.)
+  const parseFlexibleDate = (dateStr: string | number | undefined, isEnd = false): Date | null => {
+    if (dateStr === undefined || dateStr === null) return null;
+    let cleanStr = String(dateStr).trim();
+    if (!cleanStr || cleanStr === '-' || cleanStr === 'null' || cleanStr === 'undefined') return null;
 
-  const parseFlexibleDate = (dateStr: string | undefined, isEnd = false): Date | null => {
-    if (!dateStr || typeof dateStr !== 'string') return null;
-    let cleanStr = dateStr.trim();
-    if (!cleanStr) return null;
-    
+    // Normalize Arabic numerals to standard 0-9
     cleanStr = cleanStr.replace(/[٠١٢٣٤٥٦٧٨٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
 
-    const directDate = new Date(cleanStr);
+    // Normalize CJK date formats if present
+    cleanStr = cleanStr.replace(/[年月]/g, '/').replace(/日/g, '').trim();
+
+    // Check direct ISO / standard string: "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm:ss"
+    const directDate = new Date(cleanStr.replace(' ', 'T'));
     if (!isNaN(directDate.getTime())) {
+      // If no time component was in the string, set boundary time
       if (!cleanStr.includes(':') && !cleanStr.includes('T') && !cleanStr.includes(' ')) {
         if (isEnd) {
           directDate.setHours(23, 59, 59, 999);
@@ -63,7 +65,8 @@ export default function LessonList({
       return directDate;
     }
 
-    const isoMatch = cleanStr.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+    // Try YYYY-MM-DD or YYYY/MM/DD with optional time
+    const isoMatch = cleanStr.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
     if (isoMatch) {
       const y = parseInt(isoMatch[1], 10);
       const m = parseInt(isoMatch[2], 10) - 1;
@@ -74,7 +77,8 @@ export default function LessonList({
       return new Date(y, m, d, h, mi, s);
     }
 
-    const dmyMatch = cleanStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+    // Try DD-MM-YYYY or DD/MM/YYYY with optional time
+    const dmyMatch = cleanStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
     if (dmyMatch) {
       const d = parseInt(dmyMatch[1], 10);
       const m = parseInt(dmyMatch[2], 10) - 1;
@@ -89,42 +93,67 @@ export default function LessonList({
   };
 
   const isLessonVisibleByDate = (l: WordData): boolean => {
-    const hasDays = l.expireAfterDays !== undefined && l.expireAfterDays !== null && l.expireAfterDays !== '';
-    if (!l.startDate && !l.endDate && !hasDays) return true;
+    const hasStartDate = !!l.startDate && String(l.startDate).trim() !== '' && String(l.startDate).trim() !== '-';
+    const hasEndDate = !!l.endDate && String(l.endDate).trim() !== '' && String(l.endDate).trim() !== '-';
+    const hasDays = l.expireAfterDays !== undefined && l.expireAfterDays !== null && String(l.expireAfterDays).trim() !== '' && String(l.expireAfterDays).trim() !== '-';
+
+    // If no schedule conditions defined, lesson is always visible
+    if (!hasStartDate && !hasEndDate && !hasDays) return true;
+
     const now = new Date();
 
-    const startDate = parseFlexibleDate(l.startDate, false);
-    if (startDate && now < startDate) {
-      return false;
-    }
-
-    const endDate = parseFlexibleDate(l.endDate, true);
-    if (endDate && now > endDate) {
-      return false;
-    }
-
-    if (startDate && hasDays) {
-      const days = typeof l.expireAfterDays === 'number' ? l.expireAfterDays : parseFloat(String(l.expireAfterDays));
-      if (!isNaN(days) && days > 0) {
-        const calculatedExpiry = new Date(startDate.getTime() + days * 24 * 60 * 60 * 1000);
-        if (now > calculatedExpiry) {
-          return false;
+    if (hasStartDate) {
+      const startDate = parseFlexibleDate(l.startDate, false);
+      if (startDate && now < startDate) {
+        // Scheduled in the future; not yet active!
+        return false;
+      }
+      if (startDate && hasDays) {
+        const days = typeof l.expireAfterDays === 'number' ? l.expireAfterDays : parseFloat(String(l.expireAfterDays));
+        if (!isNaN(days) && days > 0) {
+          const calculatedExpiry = new Date(startDate.getTime() + days * 24 * 60 * 60 * 1000);
+          if (now > calculatedExpiry) {
+            // Expired after X days from start date
+            return false;
+          }
         }
+      }
+    }
+
+    if (hasEndDate) {
+      const endDate = parseFlexibleDate(l.endDate, true);
+      if (endDate && now > endDate) {
+        // Expired after unified end date
+        return false;
       }
     }
 
     return true;
   };
 
+  const completedCount = React.useMemo(() => {
+    return lessons.filter(isLessonCompleted).length;
+  }, [lessons]);
+
+  const lessonsWithIndex = React.useMemo(() => {
+    return lessons.map((lesson, originalIndex) => ({
+      ...lesson,
+      originalIndex,
+    }));
+  }, [lessons]);
+
   const displayedLessons = React.useMemo(() => {
     return lessonsWithIndex.filter(l => {
-      if (!isLessonVisibleByDate(l)) {
-        return false;
+      const completed = isLessonCompleted(l);
+
+      if (completed) {
+        // If hideCompleted is true, hide completed lessons.
+        // If hideCompleted is false, show completed lessons!
+        return !hideCompleted;
       }
-      if (hideCompleted && l.completed === 'تم') {
-        return false;
-      }
-      return true;
+
+      // Uncompleted lessons: only show if currently active and visible by date schedule
+      return isLessonVisibleByDate(l);
     });
   }, [lessonsWithIndex, hideCompleted]);
 
@@ -257,15 +286,19 @@ export default function LessonList({
         </div>
       ) : displayedLessons.length === 0 ? (
         <div className="bg-[#fefcf8] dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-3xl p-10 text-center shadow-md">
-          <span className="text-4xl">🎉</span>
-          <h4 className="text-base font-extrabold text-emerald-700 dark:text-emerald-400 mt-2">{t('all_completed_title')}</h4>
-          <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-1">{t('all_completed_sub')}</p>
+          <span className="text-4xl">{completedCount > 0 ? '🎉' : '📅'}</span>
+          <h4 className="text-base font-extrabold text-slate-800 dark:text-slate-100 mt-2">
+            {completedCount > 0 ? t('all_completed_title') : t('all_scheduled_future_title')}
+          </h4>
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-1">
+            {completedCount > 0 ? t('all_completed_sub') : t('all_scheduled_future_sub')}
+          </p>
           <button
             onClick={() => setHideCompleted(false)}
             className="mt-4 px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold text-xs rounded-xl shadow-sm transition-all cursor-pointer inline-flex items-center gap-1.5"
           >
             <Eye className="w-4 h-4" />
-            <span>{t('show_completed')} ({completedCount})</span>
+            <span>{completedCount > 0 ? `${t('show_completed')} (${completedCount})` : t('show_all_lessons_btn')}</span>
           </button>
         </div>
       ) : (
@@ -282,7 +315,7 @@ export default function LessonList({
               <tbody className="divide-y divide-amber-100/40 dark:divide-slate-800/60">
                 {displayedLessons.map((lesson) => {
                   const idx = lesson.originalIndex;
-                  const isCompleted = lesson.completed === 'تم';
+                  const isCompleted = isLessonCompleted(lesson);
                   
                   let showReset = isCompleted && lesson.retryResetCount > 0;
                   if (lesson.resetCondition === 'نعم') {

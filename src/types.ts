@@ -176,6 +176,10 @@ export interface TelegramTemplateItem {
   th: string;
   en: string;
   variables: string[];
+  buttonTextAr?: string;
+  buttonTextTh?: string;
+  buttonTextEn?: string;
+  buttonUrl?: string;
 }
 
 export interface TelegramBroadcastMessage {
