@@ -1539,17 +1539,35 @@ export default function LessonDetail({
               {lesson.youtubeUrl && (
                 <div
                   ref={videoCardRef}
-                  className={`bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-1.5 sm:p-5 shadow-lg shadow-sky-100/40 dark:shadow-none flex flex-col relative transition-all ${
-                    ytFullscreen ? 'fixed inset-0 z-50 w-screen h-screen rounded-none p-1 sm:p-6 bg-slate-950 border-none' : ''
-                  }`}
+                  className={
+                    ytFullscreen
+                      ? 'fixed inset-0 z-50 w-screen h-screen bg-slate-950 p-0 m-0 rounded-none border-none flex flex-col justify-between overflow-hidden'
+                      : 'bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-1.5 sm:p-5 shadow-lg shadow-sky-100/40 dark:shadow-none flex flex-col relative transition-all'
+                  }
                 >
-                  <h3 className={`text-sm font-bold text-slate-800 dark:text-slate-100 mb-2 sm:mb-3.5 flex items-center gap-1.5 justify-center ${ytFullscreen ? 'text-xs sm:text-base py-1 sm:py-0 mb-1 sm:mb-5 text-slate-200' : ''}`}>
-                    <Video className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500 animate-pulse" />
-                    <span>{t('interactive_video')}</span>
-                  </h3>
+                  {ytFullscreen ? (
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/90 border-b border-slate-800/80 text-xs font-bold text-slate-200 shrink-0 z-10">
+                      <div className="flex items-center gap-1.5">
+                        <Video className="w-3.5 h-3.5 text-indigo-400" />
+                        <span className="truncate max-w-[200px] sm:max-w-md">{lesson.comment || t('interactive_video')}</span>
+                      </div>
+                      <button
+                        onClick={handleToggleFullscreen}
+                        className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                        title="تصغير الشاشة"
+                      >
+                        <Minimize className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-2 sm:mb-3.5 flex items-center gap-1.5 justify-center">
+                      <Video className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500 animate-pulse" />
+                      <span>{t('interactive_video')}</span>
+                    </h3>
+                  )}
                   
                   {/* Aspect video player frame wrapper */}
-                  <div className={`relative ${ytFullscreen ? 'flex-grow h-0 w-full mb-1 sm:mb-6' : 'aspect-video w-full mb-2 sm:mb-3.5'} rounded-xl sm:rounded-2xl overflow-hidden border border-sky-100 dark:border-slate-800 bg-slate-950`}>
+                  <div className={`relative ${ytFullscreen ? 'flex-1 min-h-0 w-full mb-0 rounded-none' : 'aspect-video w-full mb-2 sm:mb-3.5 rounded-xl sm:rounded-2xl border border-sky-100 dark:border-slate-800'} overflow-hidden bg-slate-950`}>
                     {isYtVideo ? (
                       <div id="yt-player-frame" className="w-full h-full" />
                     ) : (
@@ -1599,7 +1617,11 @@ export default function LessonDetail({
                   </AnimatePresence>
 
                   {/* Custom Controls */}
-                  <div className="flex items-center justify-between gap-1.5 sm:gap-4 p-1.5 sm:p-3 bg-indigo-50/70 dark:bg-slate-950 border border-indigo-100/50 dark:border-slate-800 rounded-xl sm:rounded-2xl w-full shadow-inner">
+                  <div className={`flex items-center justify-between gap-1.5 sm:gap-4 ${
+                    ytFullscreen 
+                      ? 'p-2 sm:p-2.5 bg-slate-950/95 border-t border-slate-800/90 rounded-none shrink-0' 
+                      : 'p-1.5 sm:p-3 bg-indigo-50/70 dark:bg-slate-950 border border-indigo-100/50 dark:border-slate-800 rounded-xl sm:rounded-2xl shadow-inner'
+                  } w-full`}>
                     <button
                       onClick={ytPlaying ? handleYtPause : handleYtPlay}
                       className="p-2 sm:p-3 bg-indigo-600 text-white rounded-lg sm:rounded-xl hover:bg-indigo-700 transition-all active:scale-90 cursor-pointer shadow-md shadow-indigo-600/20 shrink-0"
@@ -1822,45 +1844,55 @@ export default function LessonDetail({
                             <span
                               key={index}
                               onClick={() => playLetter(lesson.letterSounds[index], index)}
-                              className={`relative inline-block cursor-pointer select-none transition-all duration-200 hover:text-amber-500 dark:hover:text-amber-400 ${
+                              className={`cursor-pointer select-none transition-colors duration-150 ${
                                 isActive
-                                  ? 'text-amber-500 dark:text-amber-400 scale-110 drop-shadow-[0_4px_14px_rgba(245,158,11,0.45)]'
+                                  ? 'text-amber-500 dark:text-amber-400 underline decoration-amber-500 dark:decoration-amber-400 decoration-4 underline-offset-8'
                                   : isListened
-                                  ? 'text-emerald-500 dark:text-emerald-400 font-bold'
-                                  : 'text-indigo-950 dark:text-indigo-200'
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : 'text-slate-800 dark:text-slate-100 hover:text-amber-500 dark:hover:text-amber-400'
                               }`}
                               title={`اضغط للاستماع لصوت الحرف`}
                             >
                               {char}
-                              {/* Cross-browser animated wave underline for active letter */}
-                              {isActive && (
-                                <span className="absolute -bottom-2 sm:-bottom-2.5 left-0 right-0 flex justify-center pointer-events-none">
-                                  <svg className="w-full h-2 sm:h-2.5 text-amber-500 dark:text-amber-400 animate-pulse" viewBox="0 0 32 6" fill="none" preserveAspectRatio="none">
-                                    <path d="M0 3 Q 8 0, 16 3 T 32 3" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                                  </svg>
-                                </span>
-                              )}
                             </span>
                           );
                         })}
                       </div>
                     </div>
 
-                    <div className="flex flex-row-reverse items-center justify-center gap-3 mt-4" dir="rtl">
+                    <div className="flex flex-row-reverse items-center justify-center gap-2 sm:gap-3 mt-5 flex-wrap" dir="rtl">
                       {groupedLetters.map((char, index) => {
                         const isListened = listenedLetters.has(index);
                         const isActive = activeLetterIdx === index;
                         return (
-                          <div key={index} className="flex flex-col items-center gap-1">
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => playLetter(lesson.letterSounds[index], index)}
+                            className={`flex flex-col items-center gap-1.5 px-3 py-2 rounded-2xl transition-all cursor-pointer active:scale-95 border ${
+                              isActive
+                                ? 'bg-amber-100/80 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700/80 shadow-sm'
+                                : isListened
+                                ? 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60'
+                                : 'bg-white/80 dark:bg-slate-900/80 border-slate-200/70 dark:border-slate-800 hover:border-amber-200'
+                            }`}
+                            title={`استمع لصوت الحرف: ${char}`}
+                          >
                             <span className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
                               isActive
-                                ? 'bg-amber-400 dark:bg-amber-300 ring-4 ring-amber-100 dark:ring-amber-950/50 scale-125'
+                                ? 'bg-amber-500 dark:bg-amber-400 ring-4 ring-amber-100 dark:ring-amber-950/50 scale-125'
                                 : isListened
                                 ? 'bg-emerald-500 dark:bg-emerald-400 shadow-sm'
-                                : 'bg-slate-200 dark:bg-slate-800'
+                                : 'bg-slate-300 dark:bg-slate-700'
                             }`} />
-                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold select-none">{char}</span>
-                          </div>
+                            <span className={`text-xs font-extrabold select-none transition-colors ${
+                              isActive
+                                ? 'text-amber-700 dark:text-amber-300'
+                                : isListened
+                                ? 'text-emerald-700 dark:text-emerald-400'
+                                : 'text-slate-600 dark:text-slate-400'
+                            }`}>{char}</span>
+                          </button>
                         );
                       })}
                     </div>
